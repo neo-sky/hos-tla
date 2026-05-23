@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "contracts/resale-locker",
+    "contracts/sub-account-locker",
+    "contracts/tla-manager",
+    "contracts/tla-registry",
+]
+
+[workspace.dependencies]
+near-sdk = { version = "=5.24.1" }
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+panic = "abort"
+overflow-checks = true
