@@ -101,12 +101,14 @@ admin --resale_abort(account)--> ext_resale_locker(account).abort()
 - **Registry-only callability**: `assert_registry()?` precedes `create_sub_account` ([lib.rs:66-71](contracts/tla-manager/src/lib.rs#L66-L71)).
 - **Locker WASM bundling**: every new sub-account gets the canonical locker code via `Promise::new(sub).deploy_contract(LOCKER_WASM).function_call("new",...)`. The bundled WASM is `include_bytes!`'d at compile time.
 - **No raw `delete_account`**: the dangerous primitive that existed pre-WS1 was removed. Only registry-orchestrated locker calls can delete sub-accounts.
-- **No HoS-held recovery key**: `recovery_key` field and its `add_full_access_key` were removed in WS1. Sub-accounts have only the user's owner_key after creation.
+- **Hold-until-export (no renter key granted at creation)**: `create_sub_account` does NOT add a full-access key for the renter. It deploys the locker, passes `owner_key` into `new(registry, owner_key)`, and transfers. The account ends with ZERO access keys, controlled solely by the locker. This is what makes reclaim enforceable — the renter cannot deploy over the locker or otherwise bypass it. The stored `owner_key` is added only on registry-gated `export`.
 
 ### 3.3 sub-account-locker
-- **Registry-only callability**: `assert_registry()?` on `sweep_ft` and `finalize_delete` ([lib.rs:110-116](contracts/sub-account-locker/src/lib.rs#L110-L116)).
+- **Registry-only callability**: `assert_registry()?` on `sweep_ft`, `finalize_delete`, and `export`.
+- **Held/Exporting/Exported state machine**: `sweep_ft`, `finalize_delete`, and `export` all require `Held`. `export` transitions `Held → Exporting`, then a `#[private]` callback sets `Exported` on success or reverts to `Held` on failure. Once `Exported`, reclaim is blocked (the account has left HoS); once reclaim deletes the account, export is moot. Terminal states are mutually exclusive.
 - **Self-delete only**: `Promise::new(env::current_account_id()).delete_account(destination)` — predecessor == receiver, protocol-valid (no parent-deletes-child path).
-- **Tiny surface**: 4 public methods, ~130KB WASM. Owner of the sub-account has a separate full-access key and can bypass the locker (their right; their account).
+- **FT sweep is best-effort but safe**: `after_balance_query` / `after_storage_deposit` use `#[callback_result]` and skip a token gracefully on query or NEP-145 storage-deposit failure. Safety is preserved by the registry's enforced finalize, which blocks `delete_account` while any allowlisted FT balance is nonzero — a skipped sweep leaves the account undeletable, never deleted-with-stranded-funds.
+- **Export releases custody**: `export` adds the stored `owner_key` as a full-access key; the renter then fully controls the account and it is removed from registry management (`export_sub_account` is admin-gated for V1 — HoS-mediated; self-service/buyout-priced export is a marketplace-layer follow-up).
 
 ### 3.4 resale-locker
 - **State immutability post-init**: `registry` and `recovery_key` are stored at `new()` and never changed (no setter exists). `settled` is monotone false → true.

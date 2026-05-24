@@ -1,5 +1,7 @@
 use crate::error::ContractError;
-use crate::events::{self, FinalizeBlockedEvent, SubAccountReclaimedEvent};
+use crate::events::{
+    self, FinalizeBlockedEvent, SubAccountExportedEvent, SubAccountReclaimedEvent,
+};
 use crate::mother::effective_sub_lifecycle;
 use crate::types::*;
 use crate::{TlaRegistry, TlaRegistryExt};
@@ -14,6 +16,8 @@ const GAS_FOR_LOCKER_DELETE: Gas = Gas::from_tgas(30);
 const GAS_FOR_FINALIZE_CB: Gas = Gas::from_tgas(10);
 const GAS_FOR_BALANCE_QUERY: Gas = Gas::from_tgas(5);
 const GAS_FOR_BALANCES_CB_TOTAL: Gas = Gas::from_tgas(55);
+const GAS_FOR_LOCKER_EXPORT: Gas = Gas::from_tgas(20);
+const GAS_FOR_EXPORT_CB: Gas = Gas::from_tgas(10);
 
 const FT_BALANCE_MAX_LEN: usize = 256;
 
@@ -22,6 +26,7 @@ const FT_BALANCE_MAX_LEN: usize = 256;
 trait SubAccountLocker {
     fn sweep_ft(&mut self, ft: AccountId, destination: AccountId);
     fn finalize_delete(&mut self, destination: AccountId);
+    fn export(&mut self);
 }
 
 #[allow(dead_code)]
@@ -248,6 +253,67 @@ impl TlaRegistry {
                 full_name: &key,
                 tla_id: tla_id.as_str(),
                 swept_to: destination.as_str(),
+            },
+        );
+    }
+
+    #[handle_result]
+    pub fn export_sub_account(
+        &mut self,
+        tla_id: AccountId,
+        name: String,
+    ) -> Result<Promise, ContractError> {
+        self.assert_admin()?;
+        let key = sub_account_key(&tla_id, &name);
+        if self.sub_accounts.get(&key).is_none() {
+            return Err(ContractError::SubAccountNotFound);
+        }
+        let sub_account: AccountId = key
+            .parse()
+            .map_err(|_| ContractError::InvalidSubAccountId)?;
+        if self
+            .mother_use_count
+            .get(&sub_account)
+            .copied()
+            .unwrap_or(0)
+            > 0
+        {
+            return Err(ContractError::SubAccountIsMother);
+        }
+
+        Ok(ext_locker::ext(sub_account)
+            .with_static_gas(GAS_FOR_LOCKER_EXPORT)
+            .export()
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_EXPORT_CB)
+                    .on_export_settled(tla_id, name),
+            ))
+    }
+
+    #[private]
+    pub fn on_export_settled(&mut self, tla_id: AccountId, name: String) {
+        if !is_promise_success() {
+            return;
+        }
+        let key = sub_account_key(&tla_id, &name);
+        if self.sub_accounts.remove(&key).is_none() {
+            return;
+        }
+        self.sub_account_count = self.sub_account_count.saturating_sub(1);
+        let is_business = self
+            .tlas
+            .get(&tla_id)
+            .map(|t| t.tla_type == TlaType::Business)
+            .unwrap_or(false);
+        if is_business {
+            self.business_count_decrement(&tla_id);
+        }
+        events::emit(
+            "sub_account_exported",
+            &SubAccountExportedEvent {
+                full_name: &key,
+                tla_id: tla_id.as_str(),
             },
         );
     }

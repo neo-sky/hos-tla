@@ -4,7 +4,7 @@ use crate::error::ManagerError;
 use near_sdk::serde::Serialize;
 use near_sdk::{env, near, AccountId, Gas, NearToken, PanicOnDefault, Promise, PublicKey};
 
-const VERSION: u8 = 3;
+const VERSION: u8 = 4;
 
 const LOCKER_WASM: &[u8] = include_bytes!("../res/sub_account_locker.wasm");
 
@@ -36,9 +36,10 @@ impl TlaManager {
             .parse()
             .map_err(|_| ManagerError::InvalidSubAccountName)?;
 
-        let init_args = near_sdk::serde_json::json!({ "registry": self.registry })
-            .to_string()
-            .into_bytes();
+        let init_args =
+            near_sdk::serde_json::json!({ "registry": self.registry, "owner_key": owner_key })
+                .to_string()
+                .into_bytes();
 
         Ok(Promise::new(sub_account)
             .create_account()
@@ -49,7 +50,6 @@ impl TlaManager {
                 NearToken::from_yoctonear(0),
                 GAS_FOR_LOCKER_INIT,
             )
-            .add_full_access_key(owner_key)
             .transfer(env::attached_deposit()))
     }
 

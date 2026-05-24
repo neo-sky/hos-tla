@@ -523,3 +523,90 @@ async fn test_business_sub_cap_override() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_hold_until_export() -> Result<()> {
+    let h = setup().await?;
+
+    let tla = deploy_manager_at_tla(&h.worker, h.registry.id(), "vault").await?;
+    let licensee = h
+        .worker
+        .root_account()?
+        .create_subaccount("licensee4")
+        .initial_balance(NearToken::from_near(2000))
+        .transact()
+        .await?
+        .into_result()?;
+
+    h.admin
+        .call(h.registry.id(), "register_tla")
+        .args_json(json!({
+            "tla_id": tla.id(),
+            "tla_type": "Business",
+            "premium_category": "Standard",
+            "licensee": licensee.id(),
+        }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    licensee
+        .call(h.registry.id(), "activate_tla")
+        .args_json(json!({ "tla_id": tla.id() }))
+        .deposit(NearToken::from_near(1500))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let owner_pk = near_workspaces::types::SecretKey::from_random(KeyType::ED25519).public_key();
+    licensee
+        .call(h.registry.id(), "rent_sub_account")
+        .args_json(json!({
+            "tla_id": tla.id(),
+            "name": "carol",
+            "owner_key": owner_pk,
+            "main_wallet": licensee.id(),
+        }))
+        .deposit(NearToken::from_near(10))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let sub_id: near_workspaces::AccountId = format!("carol.{}", tla.id()).parse()?;
+
+    let cfg: serde_json::Value = h.worker.view(&sub_id, "get_config").await?.json()?;
+    assert_eq!(
+        cfg["state"], "held",
+        "rented sub-account must be held by the locker, not handed to the renter"
+    );
+    assert_eq!(
+        cfg["owner_key"],
+        serde_json::Value::String(owner_pk.to_string()),
+        "locker must store the renter key for later export"
+    );
+
+    h.admin
+        .call(h.registry.id(), "export_sub_account")
+        .args_json(json!({ "tla_id": tla.id(), "name": "carol" }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    let after: Option<serde_json::Value> = h
+        .registry
+        .view("get_sub_account")
+        .args_json(json!({ "tla_id": tla.id(), "name": "carol" }))
+        .await?
+        .json()?;
+    assert!(
+        after.is_none(),
+        "exported sub-account must leave registry management (no longer reclaimable)"
+    );
+
+    let cfg2: serde_json::Value = h.worker.view(&sub_id, "get_config").await?.json()?;
+    assert_eq!(cfg2["state"], "exported", "locker must be in exported terminal state");
+
+    Ok(())
+}

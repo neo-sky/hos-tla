@@ -97,28 +97,29 @@ done
 
 Canonical artifacts are produced via `cargo near build non-reproducible-wasm --no-abi` (wasm-opt post-processing required for nearcore VM compatibility); plain `cargo build --target wasm32-unknown-unknown --release` produces WASM that fails `PrepareError(Deserialization)` at deploy time and must never be deployed.
 
-Dev-cut hashes regenerate on every build and are NOT the freeze. The authoritative freeze hash set is captured by the reproducible Docker build (`cargo near build reproducible-wasm`) on the audit submission and committed alongside the source. Dev cut (2026-05-23, cargo-near 0.19.2 host build):
+Dev-cut hashes regenerate on every build and are NOT the freeze. The authoritative freeze hash set is captured by the reproducible Docker build (`cargo near build reproducible-wasm`) on the audit submission and committed alongside the source. Dev cut (2026-05-23, post hold-until-export rework, cargo-near 0.19.2 host build):
 ```
-dfef166d4e98b43461e12a719aa979aa520042c04c98670a1eb39e3f10eed3a6  sub_account_locker.wasm   (94,013 B)
+dcc5c4b457692af37679b69b8446cb8e2ff4c0b8167bd8b5de9748389d61cfe9  sub_account_locker.wasm   (109,434 B)
 e0ac0a9255baaa0df2dd1bf2e908d945885db3e346cca47cca28b730207931bd  resale_locker.wasm        (96,145 B)
-a12b4be05ecce8347099da64782365edf89b0715cc14996370ea5f9c574622c2  tla_manager.wasm          (188,750 B)
-7f12cad969ddd658819b53e1ce7de90d5dc5a47c5c3625ee59f82c08d551aa8f  tla_registry.wasm         (374,178 B)
+78c801d7d46883f44be0b8aa6907b6d4f837384b60404ca605b68f1bfdc3de38  tla_manager.wasm          (210,250 B)
+2eb6fe2fae2310ae0b46b848644f8b7408f479b443709104edf32bb5100ea87d  tla_registry.wasm         (379,670 B)
 ```
 
 The host build is reproducible byte-identical against the Docker reproducible build (`cargo near build reproducible-wasm`) when the same toolchain, image, and source tree are used. The image is pinned in every crate's `[package.metadata.near.reproducible_build]` block to `sourcescan/cargo-near:0.18.0-rust-1.86.0` digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`. The freeze hash set will be captured on the audit submission via the reproducible Docker build and committed alongside the source.
 
 ## Integration test suite
 
-`contracts/tla-registry/tests/integration.rs` — 6 scenarios, all passing as of 2026-05-23:
+`contracts/tla-registry/tests/integration.rs` — 7 scenarios, all passing as of 2026-05-23:
 
 ```
 test test_business_sub_cap_override ... ok
+test test_hold_until_export ... ok
 test test_lifecycle_business_tla ... ok
 test test_mother_dos_rejected ... ok
 test test_pause_blocks_user_methods ... ok
 test test_pull_payment_refund_excess ... ok
 test test_resale_lock_unlock_replay_blocked ... ok
-test result: ok. 6 passed; 0 failed; finished in 58.52s
+test result: ok. 7 passed; 0 failed; finished in 69.62s
 ```
 
-Coverage: full lifecycle (register → activate → rent), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, resale locker (unlock + replay block via lock-state machine). Not yet covered by automated tests (manual/threat-model review only): reclaim sweep+finalize end-to-end, retraction schedule/elapse/cancel, resale abort path, 1-yocto guards.
+Coverage: full lifecycle (register → activate → rent), hold-until-export (rented account is held by the locker with the renter key stored not granted; admin export releases it and removes it from registry management), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, resale locker (unlock + replay block via lock-state machine). Not yet covered by automated tests (manual/threat-model review only): reclaim sweep+finalize end-to-end, retraction schedule/elapse/cancel, resale abort path, 1-yocto guards.

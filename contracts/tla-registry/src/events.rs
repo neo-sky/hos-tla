@@ -94,6 +94,13 @@ pub struct SubAccountReclaimedEvent<'a> {
 
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde")]
+pub struct SubAccountExportedEvent<'a> {
+    pub full_name: &'a str,
+    pub tla_id: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct AllowlistEvent<'a> {
     pub kind: &'a str,
     pub token: &'a str,

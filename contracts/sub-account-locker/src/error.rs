@@ -5,6 +5,8 @@ use near_sdk::{env, FunctionError};
 #[serde(crate = "near_sdk::serde", tag = "code", rename_all = "snake_case")]
 pub enum LockerError {
     Unauthorized,
+    ExportInProgress,
+    AlreadyExported,
 }
 
 impl FunctionError for LockerError {

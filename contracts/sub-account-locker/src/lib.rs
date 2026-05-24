@@ -1,13 +1,15 @@
 mod error;
 
 use crate::error::LockerError;
+use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::U128;
 use near_sdk::serde::Serialize;
 use near_sdk::{
-    env, ext_contract, near, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue,
+    env, ext_contract, is_promise_success, near, AccountId, Gas, NearToken, PanicOnDefault,
+    Promise, PromiseError, PromiseOrValue, PublicKey,
 };
 
-const LOCKER_VERSION: u8 = 1;
+const LOCKER_VERSION: u8 = 2;
 
 const STORAGE_DEPOSIT_AMOUNT: NearToken = NearToken::from_yoctonear(1_250_000_000_000_000_000_000);
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
@@ -15,8 +17,18 @@ const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
 const GAS_BALANCE_QUERY: Gas = Gas::from_tgas(5);
 const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(8);
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
-const GAS_AFTER_BALANCE: Gas = Gas::from_tgas(25);
-const GAS_AFTER_DEPOSIT: Gas = Gas::from_tgas(12);
+const GAS_AFTER_BALANCE: Gas = Gas::from_tgas(30);
+const GAS_AFTER_DEPOSIT: Gas = Gas::from_tgas(13);
+const GAS_EXPORT_CALLBACK: Gas = Gas::from_tgas(5);
+
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Clone, PartialEq)]
+#[borsh(crate = "near_sdk::borsh")]
+#[serde(crate = "near_sdk::serde", rename_all = "snake_case")]
+pub enum SubState {
+    Held,
+    Exporting,
+    Exported,
+}
 
 #[allow(dead_code)]
 #[ext_contract(ext_ft)]
@@ -30,13 +42,42 @@ trait FungibleToken {
 #[derive(PanicOnDefault)]
 pub struct SubAccountLocker {
     registry: AccountId,
+    owner_key: PublicKey,
+    state: SubState,
 }
 
 #[near]
 impl SubAccountLocker {
     #[init]
-    pub fn new(registry: AccountId) -> Self {
-        Self { registry }
+    pub fn new(registry: AccountId, owner_key: PublicKey) -> Self {
+        Self {
+            registry,
+            owner_key,
+            state: SubState::Held,
+        }
+    }
+
+    #[handle_result]
+    pub fn export(&mut self) -> Result<Promise, LockerError> {
+        self.assert_registry()?;
+        self.assert_held()?;
+        self.state = SubState::Exporting;
+        Ok(Promise::new(env::current_account_id())
+            .add_full_access_key(self.owner_key.clone())
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_EXPORT_CALLBACK)
+                    .on_export_resolved(),
+            ))
+    }
+
+    #[private]
+    pub fn on_export_resolved(&mut self) {
+        if is_promise_success() {
+            self.state = SubState::Exported;
+        } else {
+            self.state = SubState::Held;
+        }
     }
 
     #[handle_result]
@@ -46,6 +87,7 @@ impl SubAccountLocker {
         destination: AccountId,
     ) -> Result<Promise, LockerError> {
         self.assert_registry()?;
+        self.assert_held()?;
         Ok(ext_ft::ext(ft.clone())
             .with_static_gas(GAS_BALANCE_QUERY)
             .ft_balance_of(env::current_account_id())
@@ -61,8 +103,12 @@ impl SubAccountLocker {
         &mut self,
         ft: AccountId,
         destination: AccountId,
-        #[callback_unwrap] balance: U128,
+        #[callback_result] balance: Result<U128, PromiseError>,
     ) -> PromiseOrValue<()> {
+        let balance = match balance {
+            Ok(value) => value,
+            Err(_) => return PromiseOrValue::Value(()),
+        };
         if balance.0 == 0 {
             return PromiseOrValue::Value(());
         }
@@ -84,16 +130,23 @@ impl SubAccountLocker {
         ft: AccountId,
         destination: AccountId,
         amount: U128,
-    ) -> Promise {
-        ext_ft::ext(ft)
-            .with_static_gas(GAS_FT_TRANSFER)
-            .with_attached_deposit(ONE_YOCTO)
-            .ft_transfer(destination, amount, Some(String::from("hos-tla reclaim")))
+        #[callback_result] deposit: Result<(), PromiseError>,
+    ) -> PromiseOrValue<()> {
+        if deposit.is_err() {
+            return PromiseOrValue::Value(());
+        }
+        PromiseOrValue::Promise(
+            ext_ft::ext(ft)
+                .with_static_gas(GAS_FT_TRANSFER)
+                .with_attached_deposit(ONE_YOCTO)
+                .ft_transfer(destination, amount, Some(String::from("hos-tla reclaim"))),
+        )
     }
 
     #[handle_result]
     pub fn finalize_delete(&mut self, destination: AccountId) -> Result<Promise, LockerError> {
         self.assert_registry()?;
+        self.assert_held()?;
         Ok(Promise::new(env::current_account_id()).delete_account(destination))
     }
 
@@ -101,6 +154,8 @@ impl SubAccountLocker {
         LockerConfig {
             registry: self.registry.clone(),
             locker: env::current_account_id(),
+            owner_key: self.owner_key.clone(),
+            state: self.state.clone(),
             version: LOCKER_VERSION,
         }
     }
@@ -113,6 +168,14 @@ impl SubAccountLocker {
         }
         Ok(())
     }
+
+    fn assert_held(&self) -> Result<(), LockerError> {
+        match self.state {
+            SubState::Held => Ok(()),
+            SubState::Exporting => Err(LockerError::ExportInProgress),
+            SubState::Exported => Err(LockerError::AlreadyExported),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -120,5 +183,7 @@ impl SubAccountLocker {
 pub struct LockerConfig {
     pub registry: AccountId,
     pub locker: AccountId,
+    pub owner_key: PublicKey,
+    pub state: SubState,
     pub version: u8,
 }
