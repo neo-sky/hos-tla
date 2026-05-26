@@ -97,12 +97,12 @@ done
 
 Canonical artifacts are produced via `cargo near build non-reproducible-wasm --no-abi` (wasm-opt post-processing required for nearcore VM compatibility); plain `cargo build --target wasm32-unknown-unknown --release` produces WASM that fails `PrepareError(Deserialization)` at deploy time and must never be deployed.
 
-Dev-cut hashes regenerate on every build and are NOT the freeze. The authoritative freeze hash set is captured by the reproducible Docker build (`cargo near build reproducible-wasm`) on the audit submission and committed alongside the source. Dev cut (2026-05-23, post hold-until-export rework, cargo-near 0.19.2 host build):
+Authoritative freeze captured by the reproducible Docker build (`cargo near build reproducible-wasm`) inside the pinned `sourcescan/cargo-near:0.18.0-rust-1.86.0` image (digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`). All four artifacts reproduced at the same commit (`e4ee683`, tag `audit-v1`). Determinism verified: two independent builds at this commit produce byte-identical WASM. Any auditor reproducing from the tag must get the same SHA-256s.
 ```
-dcc5c4b457692af37679b69b8446cb8e2ff4c0b8167bd8b5de9748389d61cfe9  sub_account_locker.wasm   (109,434 B)
-e0ac0a9255baaa0df2dd1bf2e908d945885db3e346cca47cca28b730207931bd  resale_locker.wasm        (96,145 B)
-78c801d7d46883f44be0b8aa6907b6d4f837384b60404ca605b68f1bfdc3de38  tla_manager.wasm          (210,250 B)
-2eb6fe2fae2310ae0b46b848644f8b7408f479b443709104edf32bb5100ea87d  tla_registry.wasm         (379,670 B)
+a7321deb849a4a50a40048b3074f4fdebec2b83febd89f141526eb990b8f7d33  sub_account_locker.wasm   (109,960 B)
+1fec4ef292ae4fb3506381f393b98b5a00efae2cc08eefb5cf7dbed07bc0dc6a  resale_locker.wasm         (96,655 B)
+5a796d2f278c3fa1d90d112e5393c11318c9510ff0af6f28f7356f5e3eb471fd  tla_manager.wasm          (211,264 B)
+d3df1821872458ebad9e3a0108249836041f9ab07d37db28e14da7ecb3f483f3  tla_registry.wasm         (380,656 B)
 ```
 
 The host build is reproducible byte-identical against the Docker reproducible build (`cargo near build reproducible-wasm`) when the same toolchain, image, and source tree are used. The image is pinned in every crate's `[package.metadata.near.reproducible_build]` block to `sourcescan/cargo-near:0.18.0-rust-1.86.0` digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`. The freeze hash set will be captured on the audit submission via the reproducible Docker build and committed alongside the source.
