@@ -2,6 +2,7 @@
 name = "tla-registry"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/neo-sky/hos-tla"
 
 [lib]
 crate-type = ["cdylib"]
