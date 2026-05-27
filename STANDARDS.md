@@ -97,29 +97,34 @@ done
 
 Canonical artifacts are produced via `cargo near build non-reproducible-wasm --no-abi` (wasm-opt post-processing required for nearcore VM compatibility); plain `cargo build --target wasm32-unknown-unknown --release` produces WASM that fails `PrepareError(Deserialization)` at deploy time and must never be deployed.
 
-Authoritative freeze captured by the reproducible Docker build (`cargo near build reproducible-wasm`) inside the pinned `sourcescan/cargo-near:0.18.0-rust-1.86.0` image (digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`). All four artifacts reproduced at the same commit (`e4ee683`, tag `audit-v1`). Determinism verified: two independent builds at this commit produce byte-identical WASM. Any auditor reproducing from the tag must get the same SHA-256s.
+Authoritative freeze captured by the reproducible Docker build (`cargo near build reproducible-wasm`) inside the pinned `sourcescan/cargo-near:0.18.0-rust-1.86.0` image (digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`). Tag `audit-v2`. The freeze is layered (leaves at `audit-v2~1`, bundlers at `audit-v2`) because cargo-near embeds the build commit's rev into every WASM via NEP-330 metadata; the bundlers `include_bytes!` the leaf artifacts from `res/`. See [README.md](README.md) for the auditor's two-step verification.
+
 ```
-a7321deb849a4a50a40048b3074f4fdebec2b83febd89f141526eb990b8f7d33  sub_account_locker.wasm   (109,960 B)
-1fec4ef292ae4fb3506381f393b98b5a00efae2cc08eefb5cf7dbed07bc0dc6a  resale_locker.wasm         (96,655 B)
-5a796d2f278c3fa1d90d112e5393c11318c9510ff0af6f28f7356f5e3eb471fd  tla_manager.wasm          (211,264 B)
-d3df1821872458ebad9e3a0108249836041f9ab07d37db28e14da7ecb3f483f3  tla_registry.wasm         (380,656 B)
+Leaves (bundled in res/, reproducibly built at audit-v2~1):
+  7755f3b10e33b278f9a9762dfb9cd7bd1718536664e17b6a8f5afcd520207632  sub_account_locker.wasm   (109,448 B)
+  f7caef49b05eb436b5ff4359303aa9328394ffd6c60c26fd8c93044623edb4bb  resale_locker.wasm         (96,655 B)
+
+Bundlers (reproducibly built at audit-v2):
+  c77f0a517092b73c37bd7edddfc8615592c5611924d73f0a0a2230aa31f15d66  tla_manager.wasm          (210,752 B)
+  9820804e8601dbfdd8196a012bae3f0356f1badd24a3333b687f09f4247cacdf  tla_registry.wasm         (381,586 B)
 ```
 
 The host build is reproducible byte-identical against the Docker reproducible build (`cargo near build reproducible-wasm`) when the same toolchain, image, and source tree are used. The image is pinned in every crate's `[package.metadata.near.reproducible_build]` block to `sourcescan/cargo-near:0.18.0-rust-1.86.0` digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`. The freeze hash set will be captured on the audit submission via the reproducible Docker build and committed alongside the source.
 
 ## Integration test suite
 
-`contracts/tla-registry/tests/integration.rs` — 7 scenarios, all passing as of 2026-05-23:
+`contracts/tla-registry/tests/integration.rs` — 8 scenarios, all passing as of 2026-05-27:
 
 ```
 test test_business_sub_cap_override ... ok
 test test_hold_until_export ... ok
 test test_lifecycle_business_tla ... ok
 test test_mother_dos_rejected ... ok
+test test_mother_pre_squat_does_not_block_future_sub ... ok
 test test_pause_blocks_user_methods ... ok
 test test_pull_payment_refund_excess ... ok
 test test_resale_lock_unlock_replay_blocked ... ok
-test result: ok. 7 passed; 0 failed; finished in 69.62s
+test result: ok. 8 passed; 0 failed; finished in 74.07s
 ```
 
 Coverage: full lifecycle (register → activate → rent), hold-until-export (rented account is held by the locker with the renter key stored not granted; admin export releases it and removes it from registry management), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, resale locker (unlock + replay block via lock-state machine). Not yet covered by automated tests (manual/threat-model review only): reclaim sweep+finalize end-to-end, retraction schedule/elapse/cancel, resale abort path, 1-yocto guards.
