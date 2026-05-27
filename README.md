@@ -34,18 +34,20 @@ listed below.
 
 ## Canonical freeze — tag `audit-v2` (SHA-256)
 
-`audit-v2` closes the eight findings from the 2026-05-27 external audit and supersedes `audit-v1` (which carried the FT-sweep callback bug and the mother pre-squat).
+`audit-v2` closes the eight findings from the 2026-05-27 external audit.
+
+History note: TRACKING.md was permanently removed from every commit via `git-filter-repo` because it contained sensitive contract figures. As a result, every commit SHA in the repo was rewritten and the prior `audit-v1` and pre-scrub `audit-v2` tags were deleted (their bundled WASM bytes had embedded NEP-330 rev metadata pointing to commits that no longer exist).
 
 The freeze is layered (inherent to the `include_bytes!` factory pattern — cargo-near embeds `NEP330_BUILD_INFO_SOURCE_CODE_SNAPSHOT=git+<repo>?rev=<HEAD>` into every WASM, so any new commit changes the leaf hashes):
 
 ```
 Bundled leaf bytes (in res/, reproducibly built at audit-v2~1):
-  7755f3b10e33b278f9a9762dfb9cd7bd1718536664e17b6a8f5afcd520207632  sub_account_locker.wasm  (109,448 B)
-  f7caef49b05eb436b5ff4359303aa9328394ffd6c60c26fd8c93044623edb4bb  resale_locker.wasm        (96,655 B)
+  eb0854a2df41ec9256655531cb40edc0c85ddbda781134480b6a7bc16e598c9c  sub_account_locker.wasm  (109,448 B)
+  469ae38fd58c1b0276430562b041b357383b795b3f6db27a122e296222366201  resale_locker.wasm        (96,655 B)
 
 Bundlers (reproducibly built at audit-v2, embed the leaf bytes above):
-  c77f0a517092b73c37bd7edddfc8615592c5611924d73f0a0a2230aa31f15d66  tla_manager.wasm         (210,752 B)
-  9820804e8601dbfdd8196a012bae3f0356f1badd24a3333b687f09f4247cacdf  tla_registry.wasm        (381,586 B)
+  af12c1ce52c67fa8d26fc6a73a6cbdccaa17a3197dafd1ccf641426409b1ac84  tla_manager.wasm         (210,752 B)
+  0cb90f1874a03e367ddb6851de1a9472468e602156fffdd09d519b43cbc1d414  tla_registry.wasm        (381,586 B)
 ```
 
 ### Auditor verification procedure

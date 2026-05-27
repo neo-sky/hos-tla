@@ -101,12 +101,12 @@ Authoritative freeze captured by the reproducible Docker build (`cargo near buil
 
 ```
 Leaves (bundled in res/, reproducibly built at audit-v2~1):
-  7755f3b10e33b278f9a9762dfb9cd7bd1718536664e17b6a8f5afcd520207632  sub_account_locker.wasm   (109,448 B)
-  f7caef49b05eb436b5ff4359303aa9328394ffd6c60c26fd8c93044623edb4bb  resale_locker.wasm         (96,655 B)
+  eb0854a2df41ec9256655531cb40edc0c85ddbda781134480b6a7bc16e598c9c  sub_account_locker.wasm   (109,448 B)
+  469ae38fd58c1b0276430562b041b357383b795b3f6db27a122e296222366201  resale_locker.wasm         (96,655 B)
 
 Bundlers (reproducibly built at audit-v2):
-  c77f0a517092b73c37bd7edddfc8615592c5611924d73f0a0a2230aa31f15d66  tla_manager.wasm          (210,752 B)
-  9820804e8601dbfdd8196a012bae3f0356f1badd24a3333b687f09f4247cacdf  tla_registry.wasm         (381,586 B)
+  af12c1ce52c67fa8d26fc6a73a6cbdccaa17a3197dafd1ccf641426409b1ac84  tla_manager.wasm          (210,752 B)
+  0cb90f1874a03e367ddb6851de1a9472468e602156fffdd09d519b43cbc1d414  tla_registry.wasm         (381,586 B)
 ```
 
 The host build is reproducible byte-identical against the Docker reproducible build (`cargo near build reproducible-wasm`) when the same toolchain, image, and source tree are used. The image is pinned in every crate's `[package.metadata.near.reproducible_build]` block to `sourcescan/cargo-near:0.18.0-rust-1.86.0` digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`. The freeze hash set will be captured on the audit submission via the reproducible Docker build and committed alongside the source.
