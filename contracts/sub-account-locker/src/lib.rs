@@ -130,9 +130,8 @@ impl SubAccountLocker {
         ft: AccountId,
         destination: AccountId,
         amount: U128,
-        #[callback_result] deposit: Result<(), PromiseError>,
     ) -> PromiseOrValue<()> {
-        if deposit.is_err() {
+        if !is_promise_success() {
             return PromiseOrValue::Value(());
         }
         PromiseOrValue::Promise(

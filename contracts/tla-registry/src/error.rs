@@ -30,6 +30,7 @@ pub enum ContractError {
     InsufficientRevenue,
     WithdrawalAmountZero,
     TokenNotInAllowlist,
+    AllowlistFull,
     AllowlistLengthMismatch,
     InvalidFtBalanceResponse,
     AllRentTiersZero,

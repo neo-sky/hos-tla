@@ -606,7 +606,58 @@ async fn test_hold_until_export() -> Result<()> {
     );
 
     let cfg2: serde_json::Value = h.worker.view(&sub_id, "get_config").await?.json()?;
-    assert_eq!(cfg2["state"], "exported", "locker must be in exported terminal state");
+    assert_eq!(
+        cfg2["state"], "exported",
+        "locker must be in exported terminal state"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_mother_pre_squat_does_not_block_future_sub() -> Result<()> {
+    let h = setup().await?;
+
+    let attacker = h
+        .worker
+        .root_account()?
+        .create_subaccount("squatter")
+        .initial_balance(NearToken::from_near(5))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let future_sub = "future.notarealtla.test.near";
+    attacker
+        .call(h.registry.id(), "set_mother")
+        .args_json(json!({ "new_mother": future_sub }))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let count: u32 = h
+        .registry
+        .view("get_mother_use_count")
+        .args_json(json!({ "account": future_sub }))
+        .await?
+        .json()?;
+    assert_eq!(
+        count, 0,
+        "pre-squatting a non-managed account must NOT bump mother_use_count; otherwise a future sub of that name would be unreclaimable"
+    );
+
+    let mother: Option<String> = h
+        .registry
+        .view("get_mother")
+        .args_json(json!({ "user": attacker.id() }))
+        .await?
+        .json()?;
+    assert_eq!(
+        mother.as_deref(),
+        Some(future_sub),
+        "the user's declared mother is still recorded; only the count is gated"
+    );
 
     Ok(())
 }

@@ -4,7 +4,7 @@ use crate::error::ManagerError;
 use near_sdk::serde::Serialize;
 use near_sdk::{env, near, AccountId, Gas, NearToken, PanicOnDefault, Promise, PublicKey};
 
-const VERSION: u8 = 4;
+const VERSION: u8 = 5;
 
 const LOCKER_WASM: &[u8] = include_bytes!("../res/sub_account_locker.wasm");
 
@@ -43,14 +43,14 @@ impl TlaManager {
 
         Ok(Promise::new(sub_account)
             .create_account()
+            .transfer(env::attached_deposit())
             .deploy_contract(LOCKER_WASM.to_vec())
             .function_call(
                 "new".to_string(),
                 init_args,
                 NearToken::from_yoctonear(0),
                 GAS_FOR_LOCKER_INIT,
-            )
-            .transfer(env::attached_deposit()))
+            ))
     }
 
     pub fn get_config(&self) -> ManagerConfig {

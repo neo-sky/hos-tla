@@ -111,11 +111,27 @@ admin --resale_abort(account)--> ext_resale_locker(account).abort()
 - **Export releases custody**: `export` adds the stored `owner_key` as a full-access key; the renter then fully controls the account and it is removed from registry management (`export_sub_account` is admin-gated for V1 — HoS-mediated; self-service/buyout-priced export is a marketplace-layer follow-up).
 
 ### 3.4 resale-locker
-- **State immutability post-init**: `registry` and `recovery_key` are stored at `new()` and never changed (no setter exists). `settled` is monotone false → true.
-- **One-shot exclusivity**: `assert_not_settled` gates both `unlock` and `abort`. Once one fires, the other is permanently blocked.
+- **State immutability post-init**: `registry` and `recovery_key` are stored at `new()` and never changed (no setter exists). `state` is monotone `Active → Settling → Settled` via the callback-confirmed AddKey path.
+- **One-shot exclusivity**: `assert_active` gates both `unlock` and `abort`. Once either resolves to `Settled`, the other is permanently blocked.
 - **Registry-only callability**: `assert_registry` on both mutating methods.
 - **Immutable abort target**: `abort()` takes no arguments; always uses `self.recovery_key`. Admin/registry has no input to the recovery key.
 - **No payable methods**: locker holds no value; only emits `AddKey` actions on itself.
+
+**Operational gap — seller key purge (known limitation, marketplace-side mitigation required):** the locker contract cannot introspect its host account's access-key set. It has no way to enforce that the seller deleted their pre-existing keys before listing. If the marketplace accepts a "locked" account without verifying the host-account state, the seller could retain a full-access key alongside the locker and drain assets after buyer settlement.
+
+**Required lock recipe** (the marketplace MUST verify this before accepting a listing; the contract cannot):
+
+1. The seller deploys the canonical resale-locker WASM (matching SHA-256 published in [README.md](README.md)) to the account they want to sell.
+2. The seller calls `new(registry, recovery_key)` to initialize the locker.
+3. The seller deletes every access key on the account in the same transaction batch.
+
+Marketplace pre-listing verification (off-chain, via NEAR RPC):
+
+- `view_state` returns code_hash matching the canonical locker WASM hash.
+- `view_access_key_list` returns an empty list (no full-access or function-call keys remain).
+- `get_config` returns the expected `registry` and `recovery_key` and `state = "active"`.
+
+If any of these three checks fails, the marketplace MUST refuse to list the account. A future V2 marketplace contract should bind this verification into the listing-creation flow so the operational gap closes on-chain.
 
 ---
 

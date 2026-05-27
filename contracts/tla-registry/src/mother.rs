@@ -53,7 +53,9 @@ impl TlaRegistry {
             return;
         }
         self.mothers.insert(user.clone(), user.clone());
-        self.increment_mother_use(user);
+        if self.sub_accounts.contains_key(user.as_str()) {
+            self.increment_mother_use(user);
+        }
         events::emit(
             "mother_set",
             &MotherEvent {
@@ -72,6 +74,7 @@ impl TlaRegistry {
     ) -> Result<(), ContractError> {
         let key = new_mother.as_str().to_string();
         let retraction_notice_ns = self.fee_config.retraction_notice_ns;
+        let new_mother_is_managed = self.sub_accounts.contains_key(&key);
         if let Some(sub) = self.sub_accounts.get(&key) {
             if &sub.owner != user {
                 return Err(ContractError::OnlyOwner);
@@ -94,7 +97,9 @@ impl TlaRegistry {
             self.decrement_mother_use(&old_mother);
         }
         self.mothers.insert(user.clone(), new_mother.clone());
-        self.increment_mother_use(new_mother);
+        if new_mother_is_managed {
+            self.increment_mother_use(new_mother);
+        }
         events::emit(
             "mother_set",
             &MotherEvent {

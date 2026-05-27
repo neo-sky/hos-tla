@@ -5,6 +5,8 @@ use crate::{TlaRegistry, TlaRegistryExt};
 use near_sdk::json_types::U128;
 use near_sdk::{env, near, AccountId};
 
+const MAX_ALLOWLIST_SIZE: u32 = 64;
+
 #[near]
 impl TlaRegistry {
     #[handle_result]
@@ -168,6 +170,9 @@ impl TlaRegistry {
         if amount_yocto > self.total_revenue {
             return Err(ContractError::InsufficientRevenue);
         }
+        if self.total_pending_refunds.saturating_add(amount_yocto) > self.available_balance() {
+            return Err(ContractError::InsufficientContractBalance);
+        }
         self.total_revenue = self.total_revenue.saturating_sub(amount_yocto);
         self.add_pending_refund(&recipient, amount_yocto);
 
@@ -185,9 +190,13 @@ impl TlaRegistry {
     #[handle_result]
     pub fn add_ft_allowlist(&mut self, token: AccountId) -> Result<(), ContractError> {
         self.assert_admin()?;
-        if !self.ft_allowlist.insert(token.clone()) {
+        if self.ft_allowlist.contains(&token) {
             return Ok(());
         }
+        if self.ft_allowlist.len() >= MAX_ALLOWLIST_SIZE {
+            return Err(ContractError::AllowlistFull);
+        }
+        self.ft_allowlist.insert(token.clone());
         events::emit(
             "ft_allowlist_added",
             &events::AllowlistEvent {
@@ -219,9 +228,13 @@ impl TlaRegistry {
     #[handle_result]
     pub fn add_nft_allowlist(&mut self, token: AccountId) -> Result<(), ContractError> {
         self.assert_admin()?;
-        if !self.nft_allowlist.insert(token.clone()) {
+        if self.nft_allowlist.contains(&token) {
             return Ok(());
         }
+        if self.nft_allowlist.len() >= MAX_ALLOWLIST_SIZE {
+            return Err(ContractError::AllowlistFull);
+        }
+        self.nft_allowlist.insert(token.clone());
         events::emit(
             "nft_allowlist_added",
             &events::AllowlistEvent {
