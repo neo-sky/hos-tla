@@ -98,19 +98,19 @@ done
 
 Canonical artifacts are produced via `cargo near build non-reproducible-wasm --no-abi` (wasm-opt post-processing required for nearcore VM compatibility); plain `cargo build --target wasm32-unknown-unknown --release` produces WASM that fails `PrepareError(Deserialization)` at deploy time and must never be deployed.
 
-Authoritative freeze captured by the reproducible Docker build (`cargo near build reproducible-wasm`) inside the pinned `sourcescan/cargo-near:0.18.0-rust-1.86.0` image (digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`). Tag `audit-v2`. The freeze is layered (leaves at `audit-v2~1`, bundlers at `audit-v2`) because cargo-near embeds the build commit's rev into every WASM via NEP-330 metadata; the bundlers `include_bytes!` the leaf artifacts from `res/`. See [README.md](README.md) for the auditor's two-step verification.
+Authoritative freeze captured by the reproducible Docker build (`cargo near build reproducible-wasm`) inside the pinned `sourcescan/cargo-near:0.18.0-rust-1.86.0` image (digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`). Tag `audit-v3`. The freeze is layered (leaves at `audit-v3~1` = 7f0b774, bundlers at `audit-v3` = 85e3b89) because cargo-near embeds the build commit's rev into every WASM via NEP-330 metadata; the bundlers `include_bytes!` the leaf artifacts from `res/`. See [README.md](README.md) for the auditor's two-step verification.
 
 ```
-Leaves (bundled in res/, reproducibly built at audit-v2~1):
-  eb0854a2df41ec9256655531cb40edc0c85ddbda781134480b6a7bc16e598c9c  sub_account_locker.wasm   (109,448 B)
-  469ae38fd58c1b0276430562b041b357383b795b3f6db27a122e296222366201  resale_locker.wasm         (96,655 B)
+Leaves (bundled in res/, reproducibly built at audit-v3~1 = 7f0b774):
+  cc44a9367237581cac44d56527fcad8de98d0c27c2b6afa6bdf95b9de76980c3  sub_account_locker.wasm   (111,150 B)
+  45a639b293acff836413b245098f612227c55b279d355ad6b4c3d1bff45283ed  resale_locker.wasm         (96,655 B)
 
-Bundlers (reproducibly built at audit-v2):
-  af12c1ce52c67fa8d26fc6a73a6cbdccaa17a3197dafd1ccf641426409b1ac84  tla_manager.wasm          (210,752 B)
-  0cb90f1874a03e367ddb6851de1a9472468e602156fffdd09d519b43cbc1d414  tla_registry.wasm         (381,586 B)
+Bundlers (reproducibly built at audit-v3 = 85e3b89):
+  f42637fe3106a699635e5a78b4c4ed553ccb72a1fa30352fc5ea687e8f45a771  tla_manager.wasm          (212,449 B)
+  44e5bdec9832fef5ad24f67040e725c86bbb4017501f9b4fedca31b33fedc599  tla_registry.wasm         (419,949 B)
 ```
 
-The host build is reproducible byte-identical against the Docker reproducible build (`cargo near build reproducible-wasm`) when the same toolchain, image, and source tree are used. The image is pinned in every crate's `[package.metadata.near.reproducible_build]` block to `sourcescan/cargo-near:0.18.0-rust-1.86.0` digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`. The freeze hash set will be captured on the audit submission via the reproducible Docker build and committed alongside the source.
+The host build is reproducible byte-identical against the Docker reproducible build (`cargo near build reproducible-wasm`) when the same toolchain, image, and source tree are used. The image is pinned in every crate's `[package.metadata.near.reproducible_build]` block to `sourcescan/cargo-near:0.18.0-rust-1.86.0` digest `sha256:2d0d458d2357277df669eac6fa23a1ac922e5ed16646e1d3315336e4dff18043`. The audit-v3 freeze hash set above was captured via the reproducible Docker build and is recorded in the annotated `audit-v3` tag.
 
 ## Integration test suite
 
@@ -144,4 +144,4 @@ test result: ok. 22 passed; 0 failed; finished in 242.00s
 
 Coverage: full lifecycle (register, activate, rent), hold-until-export (rented account is held by the locker with the renter key stored not granted; admin export releases it and removes it from registry management), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, external .near resale locker (unlock and replay block via lock-state machine), and held sub-account resale (list to buy with ownership move, locker key swap, seller pull payment, replay block; buyer-bound accepted offer; authorization and price-floor guards; commission split). Not yet covered by automated tests (manual and threat-model review only): reclaim sweep and finalize end-to-end, retraction schedule/elapse/cancel, resale-locker abort path, 1-yocto guards.
 
-The held sub-account resale primitive (locker `transfer` plus the registry `marketplace.rs` module) is the audit-v3 delta. The canonical freeze hashes below are tag `audit-v2` and predate it; the audit-v3 hash set is captured at the next reproducible Docker build and committed alongside the source.
+The held sub-account resale primitive (locker `transfer` plus the registry `marketplace.rs` module) is the audit-v3 delta over audit-v2; its reproducible hashes are in the freeze block above and in the annotated `audit-v3` tag.

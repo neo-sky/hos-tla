@@ -32,24 +32,22 @@ Build order matters because `tla-manager` and `tla-registry` embed the locker
 artifacts via `include_bytes!`. The expected hashes after the full chain are
 listed below.
 
-## Canonical freeze: tag `audit-v2` (SHA-256)
+## Canonical freeze: tag `audit-v3` (SHA-256)
 
-`audit-v2` closes the eight findings from the 2026-05-27 external audit.
-
-The held sub-account resale primitive (the locker `transfer` method and the registry `marketplace.rs` module) is the audit-v3 delta, implemented and tested on top of `audit-v2`. The hashes below are the `audit-v2` freeze and predate that work; the audit-v3 hash set is captured at the next reproducible build and committed alongside the source.
+`audit-v3` adds the held sub-account resale primitive (the locker `transfer` method and the registry `marketplace.rs` module) on top of `audit-v2`, which closed the eight findings from the 2026-05-27 external review. The canonical hashes below are also recorded in the annotated `audit-v3` tag message.
 
 History note: TRACKING.md was permanently removed from every commit via `git-filter-repo` because it contained sensitive contract figures. As a result, every commit SHA in the repo was rewritten and the prior `audit-v1` and pre-scrub `audit-v2` tags were deleted (their bundled WASM bytes had embedded NEP-330 rev metadata pointing to commits that no longer exist).
 
 The freeze is layered (inherent to the `include_bytes!` factory pattern, since cargo-near embeds `NEP330_BUILD_INFO_SOURCE_CODE_SNAPSHOT=git+<repo>?rev=<HEAD>` into every WASM, so any new commit changes the leaf hashes):
 
 ```
-Bundled leaf bytes (in res/, reproducibly built at audit-v2~1):
-  eb0854a2df41ec9256655531cb40edc0c85ddbda781134480b6a7bc16e598c9c  sub_account_locker.wasm  (109,448 B)
-  469ae38fd58c1b0276430562b041b357383b795b3f6db27a122e296222366201  resale_locker.wasm        (96,655 B)
+Bundled leaf bytes (in res/, reproducibly built at audit-v3~1 = 7f0b774):
+  cc44a9367237581cac44d56527fcad8de98d0c27c2b6afa6bdf95b9de76980c3  sub_account_locker.wasm  (111,150 B)
+  45a639b293acff836413b245098f612227c55b279d355ad6b4c3d1bff45283ed  resale_locker.wasm        (96,655 B)
 
-Bundlers (reproducibly built at audit-v2, embed the leaf bytes above):
-  af12c1ce52c67fa8d26fc6a73a6cbdccaa17a3197dafd1ccf641426409b1ac84  tla_manager.wasm         (210,752 B)
-  0cb90f1874a03e367ddb6851de1a9472468e602156fffdd09d519b43cbc1d414  tla_registry.wasm        (381,586 B)
+Bundlers (reproducibly built at audit-v3 = 85e3b89, embed the leaf bytes above):
+  f42637fe3106a699635e5a78b4c4ed553ccb72a1fa30352fc5ea687e8f45a771  tla_manager.wasm         (212,449 B)
+  44e5bdec9832fef5ad24f67040e725c86bbb4017501f9b4fedca31b33fedc599  tla_registry.wasm        (419,949 B)
 ```
 
 ### Auditor verification procedure
@@ -58,21 +56,21 @@ Bundlers (reproducibly built at audit-v2, embed the leaf bytes above):
 git clone https://github.com/neo-sky/hos-tla && cd hos-tla
 
 # Step 1: verify the bundled leaf bytes against their build commit.
-git checkout audit-v2~1
+git checkout audit-v3~1
 (cd contracts/sub-account-locker && cargo near build reproducible-wasm)
 (cd contracts/resale-locker      && cargo near build reproducible-wasm)
-sha256sum target/near/sub_account_locker/sub_account_locker.wasm  # must = 7755f3b1...
-sha256sum target/near/resale_locker/resale_locker.wasm            # must = f7caef49...
+sha256sum target/near/sub_account_locker/sub_account_locker.wasm  # must = cc44a936...
+sha256sum target/near/resale_locker/resale_locker.wasm            # must = 45a639b2...
 
 # Step 2: verify the bundlers at the audit tag.
-git checkout audit-v2
+git checkout audit-v3
 (cd contracts/tla-manager  && cargo near build reproducible-wasm)
 (cd contracts/tla-registry && cargo near build reproducible-wasm)
-sha256sum target/near/tla_manager/tla_manager.wasm                # must = c77f0a51...
-sha256sum target/near/tla_registry/tla_registry.wasm              # must = 9820804e...
+sha256sum target/near/tla_manager/tla_manager.wasm                # must = f42637fe...
+sha256sum target/near/tla_registry/tla_registry.wasm              # must = 44e5bdec...
 ```
 
-This layered procedure exists because rebuilding a leaf at `audit-v2` would embed `rev=audit-v2`, producing different bytes than the ones already committed in `res/` (which embed `rev=audit-v2~1`). The committed `res/` bytes ARE the canonical leaf artifacts; the bundlers verifiably embed them via `include_bytes!`.
+This layered procedure exists because rebuilding a leaf at `audit-v3` would embed `rev=audit-v3`, producing different bytes than the ones already committed in `res/` (which embed `rev=audit-v3~1`). The committed `res/` bytes ARE the canonical leaf artifacts; the bundlers verifiably embed them via `include_bytes!`.
 
 NEP-330 source metadata embedded on-chain:
 - `repository`: `https://github.com/neo-sky/hos-tla`
