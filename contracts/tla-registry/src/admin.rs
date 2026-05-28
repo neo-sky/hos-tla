@@ -150,6 +150,9 @@ impl TlaRegistry {
         if config.account_creation_deposit == 0 {
             return Err(ContractError::CreationDepositZero);
         }
+        if config.resale_commission_bps > 10_000 {
+            return Err(ContractError::InvalidCommissionRate);
+        }
         self.fee_config = config;
         events::emit(
             "fee_config_updated",

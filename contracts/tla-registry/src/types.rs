@@ -68,6 +68,21 @@ pub struct SubAccountEntry {
     pub retraction_at: Option<u64>,
 }
 
+#[derive(BorshDeserialize, BorshSerialize, Clone)]
+#[borsh(crate = "near_sdk::borsh")]
+pub struct Listing {
+    pub price: u128,
+    pub settling: bool,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Clone)]
+#[borsh(crate = "near_sdk::borsh")]
+pub struct AcceptedOffer {
+    pub buyer: AccountId,
+    pub price: u128,
+    pub settling: bool,
+}
+
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone)]
 #[borsh(crate = "near_sdk::borsh")]
 #[serde(crate = "near_sdk::serde")]
@@ -81,6 +96,7 @@ pub struct FeeConfig {
     pub account_creation_deposit: u128,
     pub business_max_subs: u32,
     pub retraction_notice_ns: u64,
+    pub resale_commission_bps: u16,
 }
 
 #[derive(Serialize)]
@@ -117,6 +133,23 @@ pub struct SubAccountView {
     pub rented_at: U128,
     pub expires_at: U128,
     pub annual_rent: U128,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct ListingView {
+    pub full_name: String,
+    pub price_yocto: U128,
+    pub settling: bool,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct AcceptedOfferView {
+    pub full_name: String,
+    pub buyer: AccountId,
+    pub price_yocto: U128,
+    pub settling: bool,
 }
 
 #[derive(Serialize)]

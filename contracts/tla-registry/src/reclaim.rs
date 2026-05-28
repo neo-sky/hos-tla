@@ -238,6 +238,8 @@ impl TlaRegistry {
         }
         let key = sub_account_key(&tla_id, &name);
         self.sub_accounts.remove(&key);
+        self.listings.remove(&key);
+        self.accepted_offers.remove(&key);
         self.sub_account_count = self.sub_account_count.saturating_sub(1);
         let is_business = self
             .tlas
@@ -300,6 +302,8 @@ impl TlaRegistry {
         if self.sub_accounts.remove(&key).is_none() {
             return;
         }
+        self.listings.remove(&key);
+        self.accepted_offers.remove(&key);
         self.sub_account_count = self.sub_account_count.saturating_sub(1);
         let is_business = self
             .tlas

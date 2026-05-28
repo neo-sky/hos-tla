@@ -1,4 +1,4 @@
-# HoS TLA — Standards Walkthrough
+# HoS TLA Standards Walkthrough
 
 File-by-file proof that each source file meets the non-negotiable standards. Reviewer can grep each property against the named file.
 
@@ -11,7 +11,7 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 | Zero stubs | No `todo!()`, `unimplemented!()`, `unreachable!()` on reachable paths; no placeholder returns |
 | Zero non-ASCII in source | `LC_ALL=C grep -P "[^\x00-\x7F]" contracts/*/src/**/*.rs` is empty |
 | Function size <= 100 lines | Largest function: registry `reclaim_finalize` at ~65 lines (within budget) |
-| Cyclomatic complexity <= 8 | Verified via `cargo clippy -- -W clippy::cognitive_complexity` — no warnings at threshold |
+| Cyclomatic complexity <= 8 | Verified via `cargo clippy -- -W clippy::cognitive_complexity`, no warnings at threshold |
 | Parameters <= 5 positional | All multi-arg methods take config structs (e.g., `FeeConfig`) instead of positional sprawl |
 | Line length <= 100 chars (120 hard max) | `cargo fmt` enforced with default rustfmt config (max_width = 100) |
 | ASCII only | Same grep as above |
@@ -22,10 +22,10 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 | Every `env::panic_str` replaced | Only `panic_str` calls remaining are inside the three `FunctionError::panic` impls (canonical emission point); only `.expect()` remaining is event serialization (unreachable invariant) |
 | Checked/saturating arithmetic | `saturating_add` / `saturating_sub` / `saturating_mul` on every balance and counter |
 | `overflow-checks = true` retained | In `[profile.release]` of `Cargo.toml` workspace |
-| Every callback `#[private]` | `on_sub_account_created`, `on_balances_checked`, `on_reclaim_finalized`, `on_claim_refund_settled`, `after_balance_query`, `after_storage_deposit` — all annotated |
+| Every callback `#[private]` | `on_sub_account_created`, `on_balances_checked`, `on_reclaim_finalized`, `on_claim_refund_settled`, `on_sub_account_sold`, `after_balance_query`, `after_storage_deposit`, all annotated |
 | Every PromiseResult matched | `is_promise_success()` used for single-result callbacks; `promise_result_checked(i, MAX_LEN)` for fan-in callbacks |
-| State finalized only on success branch | Counter increments and event emissions are gated by `is_promise_success()` checks in callbacks |
-| Pull-payment everywhere value leaves the contract | All refunds and admin withdrawals route through `pending_refunds`; no critical-path `Promise::transfer` to arbitrary accounts |
+| State finalized only on success branch | Counter increments, ownership moves, and event emissions are gated by `is_promise_success()` checks in callbacks |
+| Pull-payment everywhere value leaves the contract | All refunds, admin withdrawals, and resale proceeds route through `pending_refunds`; no critical-path `Promise::transfer` to arbitrary accounts |
 | Sweep-first invariant enforced | `reclaim_finalize` fans out `ft_balance_of` across the allowlist; any non-zero balance aborts |
 | Raw `delete_account` removed from codebase | Only `delete_account(destination)` call is self-delete inside the sub-account-locker (predecessor == receiver, protocol-valid) |
 | Reentrancy: no exploitable state mutation between cross-contract call and callback | Counters incremented in callback success branch; optimistic patterns (sub_accounts insert, business_sub_count bump) are rolled back on callback failure |
@@ -40,7 +40,7 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 |---|---|---|
 | `src/lib.rs` | `new`, `pause`/`unpause`, `claim_refund`, `migrate`, `get_version`, `is_paused`, `get_pending_refund`, `get_total_pending_refunds`; private `on_claim_refund_settled` callback | Module declarations, state struct, init, pause primitive, pull-payment claim with restoration callback, version-gated migrate |
 | `src/error.rs` | `ContractError`, `NameInvalidReason` | Typed enum implementing `FunctionError` manually; serde tag="code" rename_all="snake_case" |
-| `src/types.rs` | `TlaType`, `TlaStatus`, `PremiumCategory`, `TlaEntry`, `SubAccountEntry`, `FeeConfig`, lifecycle enum + views, `validate_name` | All structs have `Borsh{Serialize,Deserialize}`; lifecycle methods on `TlaEntry` and `SubAccountEntry`; `validate_name` returns `Result<(), ContractError>` |
+| `src/types.rs` | `TlaType`, `TlaStatus`, `PremiumCategory`, `TlaEntry`, `SubAccountEntry`, `FeeConfig` (with `resale_commission_bps`), `Listing`, `AcceptedOffer`, lifecycle enum and views, `validate_name` | All structs have `Borsh{Serialize,Deserialize}`; lifecycle methods on `TlaEntry` and `SubAccountEntry`; `validate_name` returns `Result<(), ContractError>` |
 | `src/fees.rs` | `base_rent`, `sub_account_rent`, `calculate_rent`, `default_fee_config` | Pure free functions; no state borrow conflicts |
 | `src/events.rs` | NEP-297 event emission via `EVENT_JSON:` log format; typed event structs | Standard = "hos-tla" version = "1.0.0" |
 | `src/admin.rs` | `register_tla`, `suspend_tla`, `unsuspend_tla`, `add_admin`, `remove_admin`, `update_fee_config`, `withdraw` (pull), allowlist mutators (ft + nft), `activate_open_tla` | All admin-gated via `assert_admin()?` |
@@ -50,6 +50,7 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 | `src/mother.rs` | `set_mother`, `get_mother`, `is_mother`, `get_mother_use_count`, `admin_clear_mother`; private `ensure_mother_default`, `set_mother_internal`, count helpers; `effective_sub_lifecycle` | DoS-fix at set_mother_internal: ownership check on HoS sub-accounts; count-based reverse for 1-to-N semantics |
 | `src/business.rs` | `schedule_retraction`, `cancel_retraction`, `get_business_sub_count`, `get_business_renewal_cost`, `get_retraction_at`; private `business_count_check_and_bump`, `business_count_decrement` | Retraction state machine; post-elapse cancel block; business cap enforcement |
 | `src/resale.rs` | `resale_unlock`, `resale_abort`, `get_resale_locker_wasm`, `get_resale_locker_sha256`, `get_resale_locker_size` | Admin-gated dispatch to ext_resale_locker; canonical WASM published via view |
+| `src/marketplace.rs` | `list_sub_account`, `unlist_sub_account`, `accept_offer`, `revoke_offer`, `buy_sub_account` (payable); private `on_sub_account_sold`; `get_listing`, `get_accepted_offer` views | Held-sub-account resale settlement; owner-gated listing with on-chain price floor, optional buyer-bound `accept_offer`; per-account settling lock blocks double-fill; seller proceeds and buyer refunds via `pending_refunds`; commission to `total_revenue`; sale-entry purge on reclaim/export |
 | `src/views.rs` | `get_tla`, `get_sub_account`, `get_rent_price`, `is_name_available`, `list_tlas` (paginated), `get_fee_config`, `get_stats`, `get_admins`, `get_ft_allowlist`, `get_nft_allowlist` | All pure reads; pagination on the only iterable view |
 
 ### contracts/tla-manager
@@ -63,7 +64,7 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 
 | File | Public surface | Notes |
 |---|---|---|
-| `src/lib.rs` | `new`, `sweep_ft`, `after_balance_query` (`#[private]`), `after_storage_deposit` (`#[private]`), `finalize_delete`, `get_config` | Registry-only callability on mutators; self-delete only; FT sweep with NEP-145 storage_deposit + ft_transfer chain |
+| `src/lib.rs` | `new`, `sweep_ft`, `after_balance_query` (`#[private]`), `after_storage_deposit` (`#[private]`), `finalize_delete`, `transfer`, `get_config` | Registry-only callability on mutators; self-delete only; FT sweep with NEP-145 storage_deposit and ft_transfer chain; `transfer` swaps the stored owner key for resale while staying Held |
 | `src/error.rs` | `LockerError` (Unauthorized) | Typed enum; `FunctionError` impl |
 
 ### contracts/resale-locker
@@ -113,7 +114,7 @@ The host build is reproducible byte-identical against the Docker reproducible bu
 
 ## Integration test suite
 
-`contracts/tla-registry/tests/integration.rs` — 8 scenarios, all passing as of 2026-05-27:
+`contracts/tla-registry/tests/integration.rs`, 22 scenarios, all passing as of 2026-05-28:
 
 ```
 test test_business_sub_cap_override ... ok
@@ -123,8 +124,24 @@ test test_mother_dos_rejected ... ok
 test test_mother_pre_squat_does_not_block_future_sub ... ok
 test test_pause_blocks_user_methods ... ok
 test test_pull_payment_refund_excess ... ok
+test test_resale_accepted_offer_bound_to_buyer ... ok
+test test_resale_authorization_guards ... ok
+test test_resale_blocked_when_tla_suspended ... ok
+test test_resale_buy_refunds_excess ... ok
+test test_resale_commission_split ... ok
+test test_resale_list_buy_transfers_and_pays ... ok
+test test_resale_list_requires_one_yocto ... ok
 test test_resale_lock_unlock_replay_blocked ... ok
-test result: ok. 8 passed; 0 failed; finished in 74.07s
+test test_resale_mother_not_sellable ... ok
+test test_resale_pause_blocks_marketplace ... ok
+test test_resale_relist_updates_price ... ok
+test test_resale_retraction_blocks_sale ... ok
+test test_resale_revoke_offer_blocks_buyer ... ok
+test test_resale_unlist_clears_sale ... ok
+test test_resale_zero_price_rejected ... ok
+test result: ok. 22 passed; 0 failed; finished in 242.00s
 ```
 
-Coverage: full lifecycle (register → activate → rent), hold-until-export (rented account is held by the locker with the renter key stored not granted; admin export releases it and removes it from registry management), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, resale locker (unlock + replay block via lock-state machine). Not yet covered by automated tests (manual/threat-model review only): reclaim sweep+finalize end-to-end, retraction schedule/elapse/cancel, resale abort path, 1-yocto guards.
+Coverage: full lifecycle (register, activate, rent), hold-until-export (rented account is held by the locker with the renter key stored not granted; admin export releases it and removes it from registry management), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, external .near resale locker (unlock and replay block via lock-state machine), and held sub-account resale (list to buy with ownership move, locker key swap, seller pull payment, replay block; buyer-bound accepted offer; authorization and price-floor guards; commission split). Not yet covered by automated tests (manual and threat-model review only): reclaim sweep and finalize end-to-end, retraction schedule/elapse/cancel, resale-locker abort path, 1-yocto guards.
+
+The held sub-account resale primitive (locker `transfer` plus the registry `marketplace.rs` module) is the audit-v3 delta. The canonical freeze hashes below are tag `audit-v2` and predate it; the audit-v3 hash set is captured at the next reproducible Docker build and committed alongside the source.

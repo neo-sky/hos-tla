@@ -37,5 +37,6 @@ pub fn default_fee_config() -> FeeConfig {
         account_creation_deposit: 2 * ONE_NEAR,
         business_max_subs: 1000,
         retraction_notice_ns: 7 * 24 * 60 * 60 * 1_000_000_000,
+        resale_commission_bps: 0,
     }
 }

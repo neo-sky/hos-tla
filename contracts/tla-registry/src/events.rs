@@ -174,3 +174,53 @@ pub struct ResaleAbortRequestedEvent<'a> {
     pub account: &'a str,
     pub by: &'a str,
 }
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct SubAccountListedEvent<'a> {
+    pub full_name: &'a str,
+    pub price_yocto: &'a str,
+    pub seller: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct SubAccountUnlistedEvent<'a> {
+    pub full_name: &'a str,
+    pub by: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct OfferAcceptedEvent<'a> {
+    pub full_name: &'a str,
+    pub buyer: &'a str,
+    pub price_yocto: &'a str,
+    pub seller: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct OfferRevokedEvent<'a> {
+    pub full_name: &'a str,
+    pub by: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct SubAccountSoldEvent<'a> {
+    pub full_name: &'a str,
+    pub tla_id: &'a str,
+    pub seller: &'a str,
+    pub buyer: &'a str,
+    pub price_yocto: &'a str,
+    pub commission_yocto: &'a str,
+    pub seller_proceeds_yocto: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct SaleFailedEvent<'a> {
+    pub full_name: &'a str,
+    pub buyer: &'a str,
+}

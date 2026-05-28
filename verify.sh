@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# verify.sh — local pre-push gate.
+# verify.sh: local pre-push gate.
 # Builds all four contracts via cargo-near (deployable WASM), hashes them,
-# runs clippy strict + fmt check, then the seven near-workspaces integration tests.
+# runs clippy strict and fmt check, then the twelve near-workspaces integration tests.
 # Exit 0 only if every step is green.
 
 set -euo pipefail
@@ -36,14 +36,14 @@ echo "  current   sub_account_locker build       = $current_locker"
 echo "  registry  embeds resale_locker.wasm      = $embedded_resale"
 echo "  current   resale_locker build            = $current_resale"
 if [ "$embedded_locker" != "$current_locker" ]; then
-  echo "  NOTE: manager bundles an earlier sub_account_locker build — this is expected"
+  echo "  NOTE: manager bundles an earlier sub_account_locker build; this is expected"
   echo "        for the layered audit freeze. See BUILD.md 'Layered freeze caveat'."
 fi
 if [ "$embedded_resale" != "$current_resale" ]; then
-  echo "  NOTE: registry bundles an earlier resale_locker build — same caveat."
+  echo "  NOTE: registry bundles an earlier resale_locker build; same caveat."
 fi
 
-echo "==> integration tests (7 scenarios + 1 pre-squat regression)"
+echo "==> integration tests (12 scenarios)"
 cargo test -p tla-registry --test integration -- --test-threads=1
 
 echo "==> verify.sh OK"

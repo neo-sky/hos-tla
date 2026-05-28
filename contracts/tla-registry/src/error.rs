@@ -48,6 +48,13 @@ pub enum ContractError {
     NotBusinessTla,
     RequiresOneYocto,
     InsufficientContractBalance,
+    NotListed,
+    SaleInProgress,
+    SubAccountNotSellable,
+    PriceNotMet,
+    InvalidPrice,
+    NoAcceptedOffer,
+    InvalidCommissionRate,
 }
 
 #[derive(Debug, Serialize)]

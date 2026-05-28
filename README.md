@@ -1,4 +1,4 @@
-# HoS TLA Contracts — Audit Handoff
+# HoS TLA Contracts: Audit Handoff
 
 NEAR smart contracts for the House of Stake TLA name-rental marketplace.
 Four crates: registry (the orchestrator), manager (deployed at each TLA, owns
@@ -32,13 +32,15 @@ Build order matters because `tla-manager` and `tla-registry` embed the locker
 artifacts via `include_bytes!`. The expected hashes after the full chain are
 listed below.
 
-## Canonical freeze — tag `audit-v2` (SHA-256)
+## Canonical freeze: tag `audit-v2` (SHA-256)
 
 `audit-v2` closes the eight findings from the 2026-05-27 external audit.
 
+The held sub-account resale primitive (the locker `transfer` method and the registry `marketplace.rs` module) is the audit-v3 delta, implemented and tested on top of `audit-v2`. The hashes below are the `audit-v2` freeze and predate that work; the audit-v3 hash set is captured at the next reproducible build and committed alongside the source.
+
 History note: TRACKING.md was permanently removed from every commit via `git-filter-repo` because it contained sensitive contract figures. As a result, every commit SHA in the repo was rewritten and the prior `audit-v1` and pre-scrub `audit-v2` tags were deleted (their bundled WASM bytes had embedded NEP-330 rev metadata pointing to commits that no longer exist).
 
-The freeze is layered (inherent to the `include_bytes!` factory pattern — cargo-near embeds `NEP330_BUILD_INFO_SOURCE_CODE_SNAPSHOT=git+<repo>?rev=<HEAD>` into every WASM, so any new commit changes the leaf hashes):
+The freeze is layered (inherent to the `include_bytes!` factory pattern, since cargo-near embeds `NEP330_BUILD_INFO_SOURCE_CODE_SNAPSHOT=git+<repo>?rev=<HEAD>` into every WASM, so any new commit changes the leaf hashes):
 
 ```
 Bundled leaf bytes (in res/, reproducibly built at audit-v2~1):
@@ -55,14 +57,14 @@ Bundlers (reproducibly built at audit-v2, embed the leaf bytes above):
 ```bash
 git clone https://github.com/neo-sky/hos-tla && cd hos-tla
 
-# Step 1 — verify the bundled leaf bytes against their build commit.
+# Step 1: verify the bundled leaf bytes against their build commit.
 git checkout audit-v2~1
 (cd contracts/sub-account-locker && cargo near build reproducible-wasm)
 (cd contracts/resale-locker      && cargo near build reproducible-wasm)
 sha256sum target/near/sub_account_locker/sub_account_locker.wasm  # must = 7755f3b1...
 sha256sum target/near/resale_locker/resale_locker.wasm            # must = f7caef49...
 
-# Step 2 — verify the bundlers at the audit tag.
+# Step 2: verify the bundlers at the audit tag.
 git checkout audit-v2
 (cd contracts/tla-manager  && cargo near build reproducible-wasm)
 (cd contracts/tla-registry && cargo near build reproducible-wasm)
@@ -89,11 +91,11 @@ compares the resulting SHA-256 against the on-chain code hash.
 
 ## Audit reading order
 
-1. [STANDARDS.md](STANDARDS.md) — file-by-file proof that each source file meets the non-negotiable standards (zero comments, function-size limits, etc.) and the verification matrix (clippy strict, fmt, build, tests).
-2. [THREAT_MODEL.md](THREAT_MODEL.md) — trust assumptions, asset-flow paths, per-contract invariants (with code links), NEAR vulnerability-class mapping, and known limitations.
-3. [BUILD.md](BUILD.md) — build/deploy procedure, bundling discipline, the host-build vs reproducible-build distinction (critical: plain `cargo build --target wasm32-unknown-unknown --release` produces nearcore-invalid WASM; only `cargo near build` artifacts deploy).
-4. [contracts/](contracts/) — the four crates. Start at `tla-registry/src/lib.rs`; the modules read in this order: types, fees, error, events, admin, rental, callbacks, mother, business, reclaim, views.
-5. [contracts/tla-registry/tests/integration.rs](contracts/tla-registry/tests/integration.rs) — seven near-workspaces scenarios covering the audit-reviewable security paths.
+1. [STANDARDS.md](STANDARDS.md): file-by-file proof that each source file meets the non-negotiable standards (zero comments, function-size limits, and so on) and the verification matrix (clippy strict, fmt, build, tests).
+2. [THREAT_MODEL.md](THREAT_MODEL.md): trust assumptions, asset-flow paths, per-contract invariants (with code links), NEAR vulnerability-class mapping, and known limitations.
+3. [BUILD.md](BUILD.md): build/deploy procedure, bundling discipline, the host-build vs reproducible-build distinction (critical: plain `cargo build --target wasm32-unknown-unknown --release` produces nearcore-invalid WASM; only `cargo near build` artifacts deploy).
+4. [contracts/](contracts/): the four crates. Start at `tla-registry/src/lib.rs`; the modules read in this order: types, fees, error, events, admin, rental, callbacks, mother, business, reclaim, marketplace, views.
+5. [contracts/tla-registry/tests/integration.rs](contracts/tla-registry/tests/integration.rs): twenty-two near-workspaces scenarios covering the audit-reviewable security paths.
 
 ## Custody model
 
@@ -104,6 +106,12 @@ because the renter cannot deploy over the locker. See
 [THREAT_MODEL.md](THREAT_MODEL.md) section 3.2-3.3 and
 [contracts/tla-manager/src/lib.rs](contracts/tla-manager/src/lib.rs) for the
 batched create-account flow.
+
+A held sub-account can be resold without leaving custody. `buy_sub_account`
+swaps the locker's stored key to the buyer and moves registry ownership while
+the account stays held, so reclaim remains enforceable through a sale and the
+buyer's key is added only on a later `export`. See
+[THREAT_MODEL.md](THREAT_MODEL.md) section 2.7.
 
 ## Known assumptions documented for the audit
 
@@ -125,6 +133,12 @@ batched create-account flow.
   now-deleted account. Documented; frontend warns at listing.
 - **Admin authority** for V1 is the deploying address set; production should
   bind a multisig DAO to the admin role before mainnet launch.
+- **Held sub-account resale** is in the audited core (audit-v3). Listings,
+  offers, and counteroffers are discovered off-chain; settlement is on-chain
+  (`list_sub_account` or `accept_offer`, then `buy_sub_account`). The seller's
+  on-chain price is the binding floor; below-floor sales use `accept_offer`
+  bound to a specific buyer. `resale_commission_bps` ships at 0 and is admin-set
+  via `update_fee_config`.
 
 ## Integration test results
 
@@ -133,10 +147,25 @@ test test_business_sub_cap_override ... ok
 test test_hold_until_export ... ok
 test test_lifecycle_business_tla ... ok
 test test_mother_dos_rejected ... ok
+test test_mother_pre_squat_does_not_block_future_sub ... ok
 test test_pause_blocks_user_methods ... ok
 test test_pull_payment_refund_excess ... ok
+test test_resale_accepted_offer_bound_to_buyer ... ok
+test test_resale_authorization_guards ... ok
+test test_resale_blocked_when_tla_suspended ... ok
+test test_resale_buy_refunds_excess ... ok
+test test_resale_commission_split ... ok
+test test_resale_list_buy_transfers_and_pays ... ok
+test test_resale_list_requires_one_yocto ... ok
 test test_resale_lock_unlock_replay_blocked ... ok
-test result: ok. 7 passed; 0 failed
+test test_resale_mother_not_sellable ... ok
+test test_resale_pause_blocks_marketplace ... ok
+test test_resale_relist_updates_price ... ok
+test test_resale_retraction_blocks_sale ... ok
+test test_resale_revoke_offer_blocks_buyer ... ok
+test test_resale_unlist_clears_sale ... ok
+test test_resale_zero_price_rejected ... ok
+test result: ok. 22 passed; 0 failed
 ```
 
 Run with: `cargo test -p tla-registry --test integration -- --test-threads=1`

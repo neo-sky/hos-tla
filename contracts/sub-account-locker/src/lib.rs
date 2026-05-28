@@ -9,7 +9,7 @@ use near_sdk::{
     Promise, PromiseError, PromiseOrValue, PublicKey,
 };
 
-const LOCKER_VERSION: u8 = 2;
+const LOCKER_VERSION: u8 = 3;
 
 const STORAGE_DEPOSIT_AMOUNT: NearToken = NearToken::from_yoctonear(1_250_000_000_000_000_000_000);
 const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
@@ -78,6 +78,14 @@ impl SubAccountLocker {
         } else {
             self.state = SubState::Held;
         }
+    }
+
+    #[handle_result]
+    pub fn transfer(&mut self, new_owner_key: PublicKey) -> Result<(), LockerError> {
+        self.assert_registry()?;
+        self.assert_held()?;
+        self.owner_key = new_owner_key;
+        Ok(())
     }
 
     #[handle_result]

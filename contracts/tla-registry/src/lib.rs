@@ -4,6 +4,7 @@ mod callbacks;
 mod error;
 mod events;
 mod fees;
+mod marketplace;
 mod mother;
 mod reclaim;
 mod rental;
@@ -22,7 +23,7 @@ use near_sdk::{
     Promise,
 };
 
-const CONTRACT_VERSION: u8 = 5;
+const CONTRACT_VERSION: u8 = 6;
 
 const GAS_FOR_CLAIM_REFUND_CB: Gas = Gas::from_tgas(10);
 
@@ -41,6 +42,8 @@ enum StorageKey {
     MotherUseCount,
     BusinessSubCount,
     BusinessSubCapOverride,
+    Listings,
+    AcceptedOffers,
 }
 
 #[near(contract_state)]
@@ -62,6 +65,8 @@ pub struct TlaRegistry {
     pub(crate) mother_use_count: LookupMap<AccountId, u32>,
     pub(crate) business_sub_count: LookupMap<AccountId, u32>,
     pub(crate) business_sub_cap_override: LookupMap<AccountId, u32>,
+    pub(crate) listings: LookupMap<String, Listing>,
+    pub(crate) accepted_offers: LookupMap<String, AcceptedOffer>,
 }
 
 #[near]
@@ -88,6 +93,8 @@ impl TlaRegistry {
             mother_use_count: LookupMap::new(StorageKey::MotherUseCount),
             business_sub_count: LookupMap::new(StorageKey::BusinessSubCount),
             business_sub_cap_override: LookupMap::new(StorageKey::BusinessSubCapOverride),
+            listings: LookupMap::new(StorageKey::Listings),
+            accepted_offers: LookupMap::new(StorageKey::AcceptedOffers),
         }
     }
 

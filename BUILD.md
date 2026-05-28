@@ -1,8 +1,8 @@
-# HoS TLA — Build & Reproducible Verification
+# HoS TLA Build and Reproducible Verification
 
 **One toolchain, no ambiguity:** all four contracts are built via `cargo near build`.
 Plain `cargo build --target wasm32-unknown-unknown --release` produces WASM that
-nearcore rejects with `CompilationError(PrepareError(Deserialization))` — do not
+nearcore rejects with `CompilationError(PrepareError(Deserialization))`. Do not
 deploy it. The standards bar requires `cargo near`'s `wasm-opt` post-processing.
 
 ## One-command verify
@@ -86,7 +86,7 @@ inside the produced WASM. That means:
 - The bundler (`tla-manager` / `tla-registry`) reproducibly builds at the *current*
   audit-tag HEAD and embeds those frozen leaf bytes verbatim via `include_bytes!`.
 - Therefore: at the audit tag, `cargo near build reproducible-wasm` for a leaf
-  produces bytes with the audit-tag rev embedded — these will NOT equal the
+  produces bytes with the audit-tag rev embedded, and these will NOT equal the
   bytes in `res/`, because the `res/` bytes have an earlier rev embedded.
 
 Auditor's two-step verification:
@@ -128,7 +128,7 @@ A match proves the deployed code corresponds to the audited source.
 
 | Property | Check |
 |---|---|
-| Source builds with no warnings | `cargo build --workspace --target wasm32-unknown-unknown --release` (host check only — DO NOT deploy these artifacts) |
+| Source builds with no warnings | `cargo build --workspace --target wasm32-unknown-unknown --release` (host check only, DO NOT deploy these artifacts) |
 | Clippy strict clean | `cargo clippy --target wasm32-unknown-unknown --release --workspace -- -D warnings` |
 | Format clean | `cargo fmt --check` |
 | Deployable artifacts produced | `cargo near build non-reproducible-wasm --locked --no-abi` per crate |
@@ -138,7 +138,7 @@ A match proves the deployed code corresponds to the audited source.
 ## Integration test execution
 
 ```bash
-# Tests read from target/near/*/*.wasm — build via cargo-near first
+# Tests read from target/near/*/*.wasm; build via cargo-near first
 (cd contracts/sub-account-locker && cargo near build non-reproducible-wasm --no-abi)
 (cd contracts/resale-locker      && cargo near build non-reproducible-wasm --no-abi)
 (cd contracts/tla-manager        && cargo near build non-reproducible-wasm --no-abi)
