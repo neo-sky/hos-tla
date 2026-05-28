@@ -26,7 +26,7 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 | Every PromiseResult matched | `is_promise_success()` used for single-result callbacks; `promise_result_checked(i, MAX_LEN)` for fan-in callbacks |
 | State finalized only on success branch | Counter increments, ownership moves, and event emissions are gated by `is_promise_success()` checks in callbacks |
 | Pull-payment everywhere value leaves the contract | All refunds, admin withdrawals, and resale proceeds route through `pending_refunds`; no critical-path `Promise::transfer` to arbitrary accounts |
-| Sweep-first invariant enforced | `reclaim_finalize` fans out `ft_balance_of` across the allowlist; any non-zero balance aborts |
+| Sweep-first invariant enforced | `reclaim_finalize` and resale `buy_sub_account` fan out `ft_balance_of` across the allowlist; any non-zero or unverifiable balance aborts (fail-closed) |
 | Raw `delete_account` removed from codebase | Only `delete_account(destination)` call is self-delete inside the sub-account-locker (predecessor == receiver, protocol-valid) |
 | Reentrancy: no exploitable state mutation between cross-contract call and callback | Counters incremented in callback success branch; optimistic patterns (sub_accounts insert, business_sub_count bump) are rolled back on callback failure |
 | Access control: every mutating method gated | Admin / licensee / owner / registry / predecessor checks documented per method in THREAT_MODEL.md |
@@ -50,7 +50,7 @@ File-by-file proof that each source file meets the non-negotiable standards. Rev
 | `src/mother.rs` | `set_mother`, `get_mother`, `is_mother`, `get_mother_use_count`, `admin_clear_mother`; private `ensure_mother_default`, `set_mother_internal`, count helpers; `effective_sub_lifecycle` | DoS-fix at set_mother_internal: ownership check on HoS sub-accounts; count-based reverse for 1-to-N semantics |
 | `src/business.rs` | `schedule_retraction`, `cancel_retraction`, `get_business_sub_count`, `get_business_renewal_cost`, `get_retraction_at`; private `business_count_check_and_bump`, `business_count_decrement` | Retraction state machine; post-elapse cancel block; business cap enforcement |
 | `src/resale.rs` | `resale_unlock`, `resale_abort`, `get_resale_locker_wasm`, `get_resale_locker_sha256`, `get_resale_locker_size` | Admin-gated dispatch to ext_resale_locker; canonical WASM published via view |
-| `src/marketplace.rs` | `list_sub_account`, `unlist_sub_account`, `accept_offer`, `revoke_offer`, `buy_sub_account` (payable); private `on_sub_account_sold`; `get_listing`, `get_accepted_offer` views | Held-sub-account resale settlement; owner-gated listing with on-chain price floor, optional buyer-bound `accept_offer`; per-account settling lock blocks double-fill; seller proceeds and buyer refunds via `pending_refunds`; commission to `total_revenue`; sale-entry purge on reclaim/export |
+| `src/marketplace.rs` | `list_sub_account`, `unlist_sub_account`, `accept_offer`, `revoke_offer`, `buy_sub_account` (payable); private `on_sub_account_sold`; `get_listing`, `get_accepted_offer` views | Held-sub-account resale settlement; owner-gated listing with on-chain price floor, optional buyer-bound `accept_offer`; per-account settling lock blocks double-fill; seller proceeds and buyer refunds via `pending_refunds`; commission to `total_revenue`; sale-entry purge on reclaim/export; settlement gated on allowlisted-FT emptiness via `ft_balance_of` fan-out (fail-closed) |
 | `src/views.rs` | `get_tla`, `get_sub_account`, `get_rent_price`, `is_name_available`, `list_tlas` (paginated), `get_fee_config`, `get_stats`, `get_admins`, `get_ft_allowlist`, `get_nft_allowlist` | All pure reads; pagination on the only iterable view |
 
 ### contracts/tla-manager
@@ -114,7 +114,7 @@ The host build is reproducible byte-identical against the Docker reproducible bu
 
 ## Integration test suite
 
-`contracts/tla-registry/tests/integration.rs`, 22 scenarios, all passing as of 2026-05-28:
+`contracts/tla-registry/tests/integration.rs`, 23 scenarios, all passing as of 2026-05-28:
 
 ```
 test test_business_sub_cap_override ... ok
@@ -127,6 +127,7 @@ test test_pull_payment_refund_excess ... ok
 test test_resale_accepted_offer_bound_to_buyer ... ok
 test test_resale_authorization_guards ... ok
 test test_resale_blocked_when_tla_suspended ... ok
+test test_resale_blocked_while_assets_unverifiable ... ok
 test test_resale_buy_refunds_excess ... ok
 test test_resale_commission_split ... ok
 test test_resale_list_buy_transfers_and_pays ... ok
@@ -139,7 +140,7 @@ test test_resale_retraction_blocks_sale ... ok
 test test_resale_revoke_offer_blocks_buyer ... ok
 test test_resale_unlist_clears_sale ... ok
 test test_resale_zero_price_rejected ... ok
-test result: ok. 22 passed; 0 failed; finished in 242.00s
+test result: ok. 23 passed; 0 failed; finished in 261.14s
 ```
 
 Coverage: full lifecycle (register, activate, rent), hold-until-export (rented account is held by the locker with the renter key stored not granted; admin export releases it and removes it from registry management), DoS-reclaim fix (mother ownership check), per-TLA business sub-account cap override, pull-payment refund, pause gate, external .near resale locker (unlock and replay block via lock-state machine), and held sub-account resale (list to buy with ownership move, locker key swap, seller pull payment, replay block; buyer-bound accepted offer; authorization and price-floor guards; commission split). Not yet covered by automated tests (manual and threat-model review only): reclaim sweep and finalize end-to-end, retraction schedule/elapse/cancel, resale-locker abort path, 1-yocto guards.

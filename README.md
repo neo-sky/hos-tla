@@ -93,7 +93,7 @@ compares the resulting SHA-256 against the on-chain code hash.
 2. [THREAT_MODEL.md](THREAT_MODEL.md): trust assumptions, asset-flow paths, per-contract invariants (with code links), NEAR vulnerability-class mapping, and known limitations.
 3. [BUILD.md](BUILD.md): build/deploy procedure, bundling discipline, the host-build vs reproducible-build distinction (critical: plain `cargo build --target wasm32-unknown-unknown --release` produces nearcore-invalid WASM; only `cargo near build` artifacts deploy).
 4. [contracts/](contracts/): the four crates. Start at `tla-registry/src/lib.rs`; the modules read in this order: types, fees, error, events, admin, rental, callbacks, mother, business, reclaim, marketplace, views.
-5. [contracts/tla-registry/tests/integration.rs](contracts/tla-registry/tests/integration.rs): twenty-two near-workspaces scenarios covering the audit-reviewable security paths.
+5. [contracts/tla-registry/tests/integration.rs](contracts/tla-registry/tests/integration.rs): twenty-three near-workspaces scenarios covering the audit-reviewable security paths.
 
 ## Custody model
 
@@ -151,6 +151,7 @@ test test_pull_payment_refund_excess ... ok
 test test_resale_accepted_offer_bound_to_buyer ... ok
 test test_resale_authorization_guards ... ok
 test test_resale_blocked_when_tla_suspended ... ok
+test test_resale_blocked_while_assets_unverifiable ... ok
 test test_resale_buy_refunds_excess ... ok
 test test_resale_commission_split ... ok
 test test_resale_list_buy_transfers_and_pays ... ok
@@ -163,7 +164,7 @@ test test_resale_retraction_blocks_sale ... ok
 test test_resale_revoke_offer_blocks_buyer ... ok
 test test_resale_unlist_clears_sale ... ok
 test test_resale_zero_price_rejected ... ok
-test result: ok. 22 passed; 0 failed
+test result: ok. 23 passed; 0 failed
 ```
 
 Run with: `cargo test -p tla-registry --test integration -- --test-threads=1`

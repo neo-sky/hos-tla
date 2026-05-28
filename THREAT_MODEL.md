@@ -105,7 +105,7 @@ buyer  --buy_sub_account(tla, name, new_owner_key) [attached deposit >= price]--
 ```
 - No value is push-transferred. Seller proceeds, buyer excess, and failed-sale refunds all route through `pending_refunds` (pull). Commission accrues to `total_revenue` (admin-withdrawable via the same pull path).
 - The buyer never receives a key on the account at sale time; `transfer` only swaps the locker's stored `owner_key`. The account stays `Held` with zero keys until a later admin-gated `export`, so reclaim enforceability is unchanged.
-- Resale does NOT delete the account, so the sweep-first invariant (which guards `delete_account`) does not apply. The buyer inherits the account whole, including any native NEAR / allowlisted FT/NFT balances. Sellers move assets out before listing; frontend warns at listing (consistent with the NFT-on-expiry posture in section 5).
+- Resale does NOT delete the account, but settlement enforces the same allowlisted-FT sweep-first scope as reclaim: `buy_sub_account` fans out `ft_balance_of` across the FT allowlist and refuses to settle (refunding the buyer in full) while any allowlisted FT balance is present, or while a balance is unverifiable (fail-closed). The buyer inherits only native NEAR and out-of-allowlist assets; NFTs remain the documented warn-only limitation. Sellers sweep assets out before selling; the frontend warns at listing.
 
 ---
 
@@ -119,6 +119,7 @@ buyer  --buy_sub_account(tla, name, new_owner_key) [attached deposit >= price]--
 - **Non-sellable mother**: `mother_use_count[sub_account_id] > 0` blocks both `reclaim_sweep_ft` and `reclaim_finalize` ([reclaim.rs:50-58](contracts/tla-registry/src/reclaim.rs#L50-L58)).
 - **Business cap**: `business_sub_count[tla] < fee_config.business_max_subs` enforced at `rent_sub_account`; count incremented BEFORE cross-contract call; decremented in callback failure path or on `on_reclaim_finalized` success.
 - **Resale unsellable gate**: `assert_sellable` requires the parent TLA status be `Active` (a Suspended TLA cannot have its sub-accounts traded) and `effective_sub_lifecycle == Active`, and it rejects mothers (`mother_use_count > 0`) and retraction-pending subs (`retraction_at.is_some()`). Enforced at list, accept_offer, and re-checked at buy time so a lifecycle drift between listing and fill cannot settle a no-longer-sellable account ([marketplace.rs](contracts/tla-registry/src/marketplace.rs)).
+- **Resale settlement asset gate**: `buy_sub_account` does not transfer until an `ft_balance_of` fan-out across the FT allowlist confirms the account is empty of allowlisted tokens; any non-zero or unverifiable balance aborts the sale, refunds the buyer via `pending_refunds`, clears the settling lock, and emits `sub_account_sale_blocked` ([marketplace.rs](contracts/tla-registry/src/marketplace.rs) `on_buy_balances_checked`). Mirrors `reclaim_finalize` and closes the canonical Decision #9 laundering vector on the sale path. The callback is panic-free: a malformed, failed, unverifiable, or count-mismatched balance response is treated as a block (buyer fully refunded), so a held buyer deposit is never stranded and the listing lock is never wedged by a hostile or buggy allowlisted FT.
 - **Resale settlement lock**: a per-account `settling` flag on the listing/accepted-offer blocks a second concurrent fill (`assert_sale_idle`); set in `resolve_and_lock_sale` before the cross-contract `transfer`, cleared on callback failure, and the entries removed on callback success. State (ownership move, seller payout, commission) is finalized ONLY in the `is_promise_success()` branch of `on_sub_account_sold`.
 - **Resale price authority**: the seller's on-chain listing price is the binding floor; `buy_sub_account` enforces `deposit >= price`. There is no signature-based off-chain order, because a contract cannot prove that an off-chain signature came from a live full-access key on the seller's account (NEAR accounts are not keys). Below-floor sales require either a re-list or an on-chain `accept_offer` bound to a specific buyer.
 - **Sale-entry purge**: `on_reclaim_finalized` and `on_export_settled` remove the sub's `listings` and `accepted_offers` entries, so an account leaving registry management cannot leave an orphaned sale record ([reclaim.rs](contracts/tla-registry/src/reclaim.rs)).
@@ -174,7 +175,7 @@ If any of these three checks fails, the marketplace MUST refuse to list the acco
 | Prefix collisions in collections | If two `StorageKey` variants overlap | Each collection uses a distinct enum variant via `BorshStorageKey`; verified unique. |
 | Promise result panics | Failed cross-contract call panics the callback, losing state | `is_promise_success()` is checked branch-style in every callback; failure branches restore state. `promise_result_checked(_, MAX_LEN)` used for hostile contract returns. |
 | One-yocto / access-key abuse | If `ft_transfer` were called without the standard one-yocto guard | `with_attached_deposit(ONE_YOCTO)` set on `ft_transfer` in [locker after_storage_deposit](contracts/sub-account-locker/src/lib.rs#L88-L92). |
-| Unbounded iteration | If a view iterates the full registry | `list_tlas` is paginated (`from_index`, `limit`); `get_admins` / `get_ft_allowlist` / `get_nft_allowlist` are bounded by admin-controlled set size. |
+| Unbounded iteration / gas-bound fan-out | If a view iterates the full registry, or a cross-contract fan-out exceeds the 300 Tgas per-transaction cap | `list_tlas` is paginated (`from_index`, `limit`); `get_admins` / `get_ft_allowlist` / `get_nft_allowlist` are bounded by admin-controlled set size. The `ft_balance_of` fan-out in `reclaim_finalize` and `buy_sub_account` is bounded by `MAX_ALLOWLIST_SIZE = 40`, sized so the queries plus callback stay under 300 Tgas (40 x 5 Tgas + callback is about 270 Tgas); a larger cap would make reclaim and sale uncallable. |
 | Account-deletion fund loss | If a sub-account is deleted with native NEAR or allowlisted FT balance | `delete_account(destination)` transfers native NEAR to destination by protocol; FTs swept first via locker.sweep_ft chain; `reclaim_finalize` enforces all FTs are zero before delete. |
 | Float arithmetic | Used in fee calculations | All amounts are u128 yoctoNEAR; multipliers are integer ratios (e.g., PremiumCategory). No floats anywhere. |
 | Upgrade gate | Unauthorized upgrade | `migrate()` is admin-gated and version-checked ([lib.rs:147-154](contracts/tla-registry/src/lib.rs#L147-L154)). Locker contracts are intentionally non-upgradable. |
@@ -192,7 +193,7 @@ If any of these three checks fails, the marketplace MUST refuse to list the acco
 | Mother going Reclaimable mid-rental | User stops paying rent on their mother sub-account; `set_mother` would have rejected the initial pickup but doesn't auto-clear mid-rental. Escape hatch: `admin_clear_mother(user)`. |
 | Storage stake validation on resale-locker deployment | Alice's `alice.near` must hold enough NEAR for the locker WASM storage stake (~1.4 NEAR). If insufficient, the lock tx fails atomically. Documented; frontend should preflight balance. |
 | Migrate() handles shape-compatible upgrades only | Shape-breaking migrations would need `#[init(ignore_state)]` reading an `OldRegistry` parallel struct. The v6 `FeeConfig` gained `resale_commission_bps`, which changes the borsh layout, so v6 must be deployed fresh or upgraded with a state-reconstructing migration, not the plain version-bump `migrate()`. |
-| Resale transfers the account whole | `buy_sub_account` does not sweep the sold account; the buyer inherits any native NEAR / allowlisted FT/NFT registered to it. Sellers must move assets out before listing. Frontend warns at listing; same posture as NFT-on-expiry. |
+| Resale NFT residual | `buy_sub_account` blocks settlement while allowlisted FT balances are present (sweep-first), but NFTs are not balance-checked (same scope as reclaim). An account sold could still carry an NFT; sellers move assets out before selling and the frontend warns at listing. |
 
 ---
 
@@ -200,7 +201,7 @@ If any of these three checks fails, the marketplace MUST refuse to list the acco
 
 Integration tests at [contracts/tla-registry/tests/integration.rs](contracts/tla-registry/tests/integration.rs) cover:
 
-Automated (22 scenarios, all passing):
+Automated (23 scenarios, all passing):
 
 | Test | Threat covered |
 |---|---|
@@ -226,6 +227,7 @@ Automated (22 scenarios, all passing):
 | `test_resale_revoke_offer_blocks_buyer` | A revoked accepted offer can no longer be filled by the previously bound buyer. |
 | `test_resale_unlist_clears_sale` | Owner unlist clears the listing (non-owner blocked); a post-unlist buy hits `NotListed`. |
 | `test_resale_zero_price_rejected` | Zero-price `list_sub_account` and `accept_offer` are rejected (`InvalidPrice`). |
+| `test_resale_blocked_while_assets_unverifiable` | With an allowlisted token whose balance cannot be confirmed zero, `buy_sub_account` blocks the sale (ownership unchanged) and refunds the buyer in full (sweep-first, fail-closed). |
 
 Not yet automated, covered by manual reasoning and this threat model, scheduled for the next test pass:
 reclaim sweep and finalize end-to-end (enforced-empty precondition), retraction elapse and post-elapse cancel-block, resale-locker abort path, storage-reserve guard on `claim_refund`.

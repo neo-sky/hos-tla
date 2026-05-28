@@ -5,7 +5,7 @@ use crate::{TlaRegistry, TlaRegistryExt};
 use near_sdk::json_types::U128;
 use near_sdk::{env, near, AccountId};
 
-const MAX_ALLOWLIST_SIZE: u32 = 64;
+const MAX_ALLOWLIST_SIZE: u32 = 40;
 
 #[near]
 impl TlaRegistry {

@@ -224,3 +224,11 @@ pub struct SaleFailedEvent<'a> {
     pub full_name: &'a str,
     pub buyer: &'a str,
 }
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct SaleBlockedEvent<'a> {
+    pub full_name: &'a str,
+    pub token: &'a str,
+    pub reason: &'a str,
+}

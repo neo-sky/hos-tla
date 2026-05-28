@@ -1,23 +1,47 @@
 use crate::error::ContractError;
 use crate::events::{
-    self, OfferAcceptedEvent, OfferRevokedEvent, SaleFailedEvent, SubAccountListedEvent,
-    SubAccountSoldEvent, SubAccountUnlistedEvent,
+    self, OfferAcceptedEvent, OfferRevokedEvent, SaleBlockedEvent, SaleFailedEvent,
+    SubAccountListedEvent, SubAccountSoldEvent, SubAccountUnlistedEvent,
 };
 use crate::mother::effective_sub_lifecycle;
 use crate::types::*;
 use crate::{TlaRegistry, TlaRegistryExt};
 use near_sdk::json_types::U128;
-use near_sdk::{env, ext_contract, is_promise_success, near, AccountId, Gas, Promise, PublicKey};
+use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::{
+    env, ext_contract, is_promise_success, near, AccountId, Gas, Promise, PromiseError,
+    PromiseOrValue, PublicKey,
+};
 
 const GAS_FOR_LOCKER_TRANSFER: Gas = Gas::from_tgas(15);
 const GAS_FOR_SOLD_CALLBACK: Gas = Gas::from_tgas(20);
+const GAS_FOR_FT_BALANCE: Gas = Gas::from_tgas(5);
+const GAS_FOR_BUY_BALANCES_CB: Gas = Gas::from_tgas(60);
 
 const BPS_DENOMINATOR: u128 = 10_000;
+const FT_BALANCE_MAX_LEN: usize = 256;
 
 #[allow(dead_code)]
 #[ext_contract(ext_locker)]
 trait SubAccountLocker {
     fn transfer(&mut self, new_owner_key: PublicKey);
+}
+
+#[allow(dead_code)]
+#[ext_contract(ext_ft)]
+trait FungibleToken {
+    fn ft_balance_of(&self, account_id: AccountId) -> U128;
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct PendingBuy {
+    pub tla_id: AccountId,
+    pub name: String,
+    pub buyer: AccountId,
+    pub new_owner_key: PublicKey,
+    pub price: U128,
+    pub deposit: U128,
 }
 
 #[near]
@@ -173,14 +197,33 @@ impl TlaRegistry {
         let sub_account: AccountId = key
             .parse()
             .map_err(|_| ContractError::InvalidSubAccountId)?;
-        Ok(ext_locker::ext(sub_account)
-            .with_static_gas(GAS_FOR_LOCKER_TRANSFER)
-            .transfer(new_owner_key)
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(GAS_FOR_SOLD_CALLBACK)
-                    .on_sub_account_sold(tla_id, name, buyer, U128(price), U128(deposit)),
-            ))
+        let settlement = PendingBuy {
+            tla_id,
+            name,
+            buyer,
+            new_owner_key,
+            price: U128(price),
+            deposit: U128(deposit),
+        };
+        let allowlist: Vec<AccountId> = self.ft_allowlist.iter().cloned().collect();
+        if allowlist.is_empty() {
+            return Ok(settle_transfer(&sub_account, settlement));
+        }
+        let mut chain = ext_ft::ext(allowlist[0].clone())
+            .with_static_gas(GAS_FOR_FT_BALANCE)
+            .ft_balance_of(sub_account.clone());
+        for ft in allowlist.iter().skip(1) {
+            chain = chain.and(
+                ext_ft::ext(ft.clone())
+                    .with_static_gas(GAS_FOR_FT_BALANCE)
+                    .ft_balance_of(sub_account.clone()),
+            );
+        }
+        Ok(chain.then(
+            Self::ext(env::current_account_id())
+                .with_static_gas(GAS_FOR_BUY_BALANCES_CB)
+                .on_buy_balances_checked(settlement, allowlist),
+        ))
     }
 
     #[private]
@@ -244,6 +287,22 @@ impl TlaRegistry {
                 seller_proceeds_yocto: &proceeds_str,
             },
         );
+    }
+
+    #[private]
+    pub fn on_buy_balances_checked(
+        &mut self,
+        settlement: PendingBuy,
+        allowlist: Vec<AccountId>,
+    ) -> PromiseOrValue<()> {
+        let key = sub_account_key(&settlement.tla_id, &settlement.name);
+        if let Some((token, reason)) = sale_block_reason(&allowlist) {
+            return self.abort_sale(&key, &settlement, &token, &reason);
+        }
+        match key.parse::<AccountId>() {
+            Ok(sub_account) => PromiseOrValue::Promise(settle_transfer(&sub_account, settlement)),
+            Err(_) => self.abort_sale(&key, &settlement, "", "invalid_sub_account_id"),
+        }
     }
 
     pub fn get_listing(&self, tla_id: AccountId, name: String) -> Option<ListingView> {
@@ -362,5 +421,66 @@ impl TlaRegistry {
         if let Some(offer) = self.accepted_offers.get_mut(key) {
             offer.settling = false;
         }
+    }
+
+    fn abort_sale(
+        &mut self,
+        key: &str,
+        settlement: &PendingBuy,
+        token: &str,
+        reason: &str,
+    ) -> PromiseOrValue<()> {
+        self.add_pending_refund(&settlement.buyer, settlement.deposit.0);
+        self.clear_settling(key);
+        events::emit(
+            "sub_account_sale_blocked",
+            &SaleBlockedEvent {
+                full_name: key,
+                token,
+                reason,
+            },
+        );
+        PromiseOrValue::Value(())
+    }
+}
+
+fn settle_transfer(sub_account: &AccountId, settlement: PendingBuy) -> Promise {
+    ext_locker::ext(sub_account.clone())
+        .with_static_gas(GAS_FOR_LOCKER_TRANSFER)
+        .transfer(settlement.new_owner_key)
+        .then(
+            TlaRegistry::ext(env::current_account_id())
+                .with_static_gas(GAS_FOR_SOLD_CALLBACK)
+                .on_sub_account_sold(
+                    settlement.tla_id,
+                    settlement.name,
+                    settlement.buyer,
+                    settlement.price,
+                    settlement.deposit,
+                ),
+        )
+}
+
+fn sale_block_reason(allowlist: &[AccountId]) -> Option<(String, String)> {
+    if env::promise_results_count() != allowlist.len() as u64 {
+        return Some((String::new(), String::from("result_count_mismatch")));
+    }
+    for (index, token) in allowlist.iter().enumerate() {
+        if let Some(reason) = ft_balance_block_reason(index as u64) {
+            return Some((token.as_str().to_string(), reason));
+        }
+    }
+    None
+}
+
+fn ft_balance_block_reason(index: u64) -> Option<String> {
+    match env::promise_result_checked(index, FT_BALANCE_MAX_LEN) {
+        Ok(bytes) => match near_sdk::serde_json::from_slice::<U128>(&bytes) {
+            Ok(balance) if balance.0 > 0 => Some(balance.0.to_string()),
+            Ok(_) => None,
+            Err(_) => Some(String::from("balance_unverifiable")),
+        },
+        Err(PromiseError::Failed) => Some(String::from("balance_query_failed")),
+        Err(_) => Some(String::from("balance_query_unverifiable")),
     }
 }

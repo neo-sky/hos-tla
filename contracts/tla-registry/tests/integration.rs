@@ -1619,3 +1619,65 @@ async fn test_resale_relist_updates_price() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_resale_blocked_while_assets_unverifiable() -> Result<()> {
+    let h = setup().await?;
+    let (tla, seller) = rent_business_sub(&h, "escrow", "seller-o", "vault").await?;
+
+    let ghost_ft: near_workspaces::AccountId =
+        format!("ghost-ft.{}", h.worker.root_account()?.id()).parse()?;
+    h.admin
+        .call(h.registry.id(), "add_ft_allowlist")
+        .args_json(json!({ "token": ghost_ft }))
+        .transact()
+        .await?
+        .into_result()?;
+
+    list_for_sale(&h, &seller, &tla, "vault", 5).await?;
+
+    let buyer = h
+        .worker
+        .root_account()?
+        .create_subaccount("buyer-o")
+        .initial_balance(NearToken::from_near(50))
+        .transact()
+        .await?
+        .into_result()?;
+    let buyer_pk = near_workspaces::types::SecretKey::from_random(KeyType::ED25519).public_key();
+
+    let _ = buyer
+        .call(h.registry.id(), "buy_sub_account")
+        .args_json(json!({ "tla_id": tla.id(), "name": "vault", "new_owner_key": buyer_pk }))
+        .deposit(NearToken::from_near(5))
+        .max_gas()
+        .transact()
+        .await?;
+
+    let sub_view: serde_json::Value = h
+        .registry
+        .view("get_sub_account")
+        .args_json(json!({ "tla_id": tla.id(), "name": "vault" }))
+        .await?
+        .json()?;
+    assert_eq!(
+        sub_view["owner"],
+        serde_json::Value::String(seller.id().to_string()),
+        "a sale must not complete while allowlisted-asset balances cannot be confirmed empty"
+    );
+
+    let pending: serde_json::Value = h
+        .registry
+        .view("get_pending_refund")
+        .args_json(json!({ "account_id": buyer.id() }))
+        .await?
+        .json()?;
+    let pending_yocto: u128 = pending.as_str().unwrap().parse()?;
+    assert_eq!(
+        pending_yocto,
+        NearToken::from_near(5).as_yoctonear(),
+        "the blocked buyer must be fully refunded via pull payment"
+    );
+
+    Ok(())
+}
